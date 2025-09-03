@@ -47,8 +47,6 @@ uploads/
 reports/
 generated/
 screenshots/
-*.pdf
-*.html
 
 # ==== Твои runtime-файлы (не коммитим реальные данные) ====
 users.json
