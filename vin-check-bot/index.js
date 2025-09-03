@@ -1299,7 +1299,18 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
     const pdfPath = path.resolve(__dirname, 'uploads', pdfName);
     try { fsSync.mkdirSync(path.dirname(pdfPath), { recursive: true }); } catch {}
 
-    const browser = await puppeteer.launch({ args:['--no-sandbox'] });
+    const browser = await puppeteer.launch({
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
+      args: [
+        '--headless=new',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-features=UseOzonePlatform',
+        '--use-gl=swiftshader',
+      ],
+    });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
     await page.pdf({
