@@ -1300,12 +1300,17 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
     try { fsSync.mkdirSync(path.dirname(pdfPath), { recursive: true }); } catch {}
 
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: 'new', // можно true, но 'new' глушит предупреждение
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-features=UseOzonePlatform', // ключевой флаг — убирает GBM
+        '--use-gl=swiftshader',
+        '--single-process',
       ],
     });
     const page = await browser.newPage();
