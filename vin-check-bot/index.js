@@ -1300,7 +1300,6 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
     try { fsSync.mkdirSync(path.dirname(pdfPath), { recursive: true }); } catch {}
 
     const browser = await puppeteer.launch({
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
       headless: true,
       args: [
         '--no-sandbox',
