@@ -1,0 +1,17 @@
+{
+  "3048ff3f-000f-5001-9000-1d7215b3dfba": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JN1FANF15U0109775",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-02T13:06:01.581Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true
+  },
+  "exp:tronk_rf:7427455385:JN1FANF15U0109775": {
+    "paymentId": "304aad06-000f-5001-8000-17e239da67f1",
+    "chatId": 7427455385,
+    "vin": "JN1FANF15U0109775",
+    "createdAt": "2025-09-03T19:38:44.459Z"
+  }
+}
