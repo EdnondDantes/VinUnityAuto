@@ -1301,14 +1301,12 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
 
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
+      headless: true,
       args: [
-        '--headless=new',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-features=UseOzonePlatform',
-        '--use-gl=swiftshader',
+        '--disable-gpu'
       ],
     });
     const page = await browser.newPage();
