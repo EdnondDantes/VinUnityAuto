@@ -1354,7 +1354,7 @@ const vinValidate = (vinRaw) => {
 };
 
 const buildRfKeyboard = () => Markup.inlineKeyboard([
-  [Markup.button.callback('Ввести ещё один VIN', 'enter_another_vin')],
+  // [Markup.button.callback('Ввести ещё один VIN', 'enter_another_vin')],
   [Markup.button.callback('Полная проверка авто по РФ', 'full_check_rf')],
   [Markup.button.callback('Назад к выбору типа', 'back_to_type')]
 ]);
@@ -1384,7 +1384,7 @@ const sendTypeSelection = async (ctx) => {
   const chatId = ctx.chat.id;
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   await ensureStartedCommands(chatId);
-  await ctx.reply('Выберите тип проверки:', Markup.inlineKeyboard([
+  await ctx.reply('🙌 Выберите тип проверки:', Markup.inlineKeyboard([
     [Markup.button.callback('Полная проверка истории авто по РФ', 'type_history')],
     [Markup.button.callback('Проверка истории по дилерской базе', 'type_oem_history')],
     [Markup.button.callback('Проверка комплектации', 'type_equipment')]
@@ -1399,7 +1399,7 @@ async function sendTypeSelectionByChat(chatId) {
 
   ]);
   await ensureStartedCommands(chatId);
-  await bot.telegram.sendMessage(chatId, 'Выберите тип проверки автомобиля:', kb);
+  await bot.telegram.sendMessage(chatId, '🙌Выберите тип проверки автомобиля:', kb);
 }
 
 /* === Пост-меню после отчётов vagvin === */
@@ -1416,11 +1416,11 @@ const buildPostMenuKeyboard = (lastVagService, rfNeedsNewVin = false) => {
 };
 const sendPostMenu = async (ctx, { rfNeedsNewVin = false } = {}) => {
   const st = getState(ctx.chat.id);
-  await ctx.reply('Выберите:', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+  await ctx.reply(':🔁Выберите', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
 };
 async function sendPostMenuByChat(chatId, { rfNeedsNewVin = false } = {}) {
   const st = getState(chatId);
-  await bot.telegram.sendMessage(chatId, 'Выберите:', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+  await bot.telegram.sendMessage(chatId, '🔁Выберите:', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
 }
 
 /* === Пост-меню после ПОЛНОЙ РФ-проверки === */
@@ -1429,9 +1429,9 @@ const buildPostMenuAfterRF = () => Markup.inlineKeyboard([
   [Markup.button.callback('Проверка комплектации по VIN', 'type_equipment')],
   [Markup.button.callback('Ввести ещё один VIN (полная проверка)', 'full_check_rf_newvin')]
 ]);
-const sendPostMenuAfterRF = async (ctx) => { await ctx.reply('Выберите:', buildPostMenuAfterRF()); };
+const sendPostMenuAfterRF = async (ctx) => { await ctx.reply('🔁Выберите:', buildPostMenuAfterRF()); };
 async function sendPostMenuAfterRFByChat(chatId) {
-  await bot.telegram.sendMessage(chatId, 'Выберите:', buildPostMenuAfterRF());
+  await bot.telegram.sendMessage(chatId, '🔁Выберите:', buildPostMenuAfterRF());
 }
 
 /* === Проверка подписки на канал === */
@@ -1472,7 +1472,8 @@ const sendMinimalVehicleInfo = async (ctx, vehicle) => {
 
 const sendRfMenuOnly = async (ctx, vin) => {
   const prefix = vin ? `VIN: ${vin}\n` : '';
-  await ctx.reply(`${prefix}Выберите дальнейшее действие:`, buildRfKeyboard());
+  await ctx.reply(`${prefix}Кажется, мы знаем где выгоднее приобрести этот автомобиль. А оплата после получения авто 👉 https://unityauto.ru/cars/\nПродолжим проверку?\nВыберите:
+`, buildRfKeyboard());
 };
 
 /* ========================== api-assist (РФ) + vPIC ========================== */
@@ -2166,7 +2167,7 @@ async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
 
       const prevState = await paymentsStore.get(payment.id);
       if (!prevState?.succeededAnnounced) {
-        await bot.telegram.sendMessage(chatId, 'Оплата получена ✅. Запрашиваю полный отчёт…\nНам нужно немного времени, чтобы создать отчет.\nПока вы ожидаете, можете скоротать время и ознакомиться с интересными предложениями нашей компании:\n⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\nhttps://unityauto.ru/cars/ ');
+        await bot.telegram.sendMessage(chatId, 'Успешно ✅. Запрашиваю отчет по Вашему VIN. Это займет некоторое время!\nГотовый отчет придет в этот чат. Все проверенные авто здесь - \nhttps://unityauto.ru/cars. Мы сделали все за вас🙂')
         await paymentsStore.merge(payment.id, { succeededAnnounced: true });
       }
 
@@ -2254,7 +2255,7 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
       return;
     }
 
-    await bot.telegram.sendMessage(chatId, 'Заявка принята ✅. Подтверждаю списание…');
+    await bot.telegram.sendMessage(chatId, 'Ваша заявка принята  ✅');
 
     const cap = await ykcCaptureWithRetries(payment.id, {
       explicitAmount: payment?.amount?.value,
@@ -2273,10 +2274,10 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
     } else {
       const last = cap.last || (await yoo.getPayment(payment.id));
       if (last.status === 'waiting_for_capture') {
-        await bot.telegram.sendMessage(chatId, '⚠️ Не удалось подтвердить списание несколько раз подряд. Отменяю авторизацию, деньги не спишутся.');
+        await bot.telegram.sendMessage(chatId, '⚠️ Не удалось подтвердить списание несколько раз подряд. Отменяю авторизацию, деньги НЕ спишутся.');
         try { await ykcCancelPayment(payment.id); } catch (e) { console.error('[YKC cancel after fail] err', e?.message); }
       } else if (last.status === 'canceled') {
-        await bot.telegram.sendMessage(chatId, 'Оплата отменена платёжной системой.');
+        await bot.telegram.sendMessage(chatId, '🙅‍♂️Оплата отменена платёжной системой.');
       } else {
         await bot.telegram.sendMessage(chatId, `⚠️ Не удалось подтвердить списание (статус: ${last.status || 'неизвестно'}).`);
       }
@@ -2305,17 +2306,17 @@ bot.command('menu', async (ctx) => { await ensureStartedCommands(ctx.chat.id); r
 bot.command('equipment', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
-  await ctx.reply('Отправьте VIN для проверки комплектации (17 символов).');
+  await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
 });
 bot.command('oem_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
-  await ctx.reply('Отправьте VIN для проверки истории по дилерской базе (17 символов).');
+  await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)');
 });
 bot.command('rf', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
-  await ctx.reply('Отправьте VIN автомобиля для проверки по РФ (17 символов).');
+  await ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)');
 });
 
 bot.action('start_flow', async (ctx) => {
@@ -2329,20 +2330,20 @@ bot.action('type_equipment', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
   await ctx.answerCbQuery();
-  await ctx.reply('Отправьте VIN для проверки комплектации (17 символов).');
+  await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
 });
 
 bot.action('type_oem_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
   await ctx.answerCbQuery();
-  await ctx.reply('Отправьте VIN для проверки истории по дилерской базе (17 символов).');
+  await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)');
 });
 bot.action('type_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
   await ctx.answerCbQuery();
-  await ctx.reply('Отправьте VIN автомобиля для проверки по РФ (17 символов).');
+  await ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)');
 });
 
 /* Повторить тот же vagvin-тип, но ввести новый VIN */
@@ -2351,10 +2352,10 @@ bot.action('vag_again_same', async (ctx) => {
   const st = getState(ctx.chat.id);
   if (st.lastVagService === 'oem_history') {
     setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null });
-    await ctx.reply('Отправьте VIN для проверки по дилерской базе (17 символов).');
+    await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов).');
   } else {
     setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null });
-    await ctx.reply('Отправьте VIN для проверки комплектации (17 символов).');
+    await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
   }
 });
 
@@ -2425,7 +2426,7 @@ bot.on('text', async (ctx) => {
       pendingBrandSelection: null,
       lastVagService: 'equipment',
     });
-    return ctx.reply('Отправьте VIN для проверки комплектации (17 символов).', buildReplyMainKeyboard());
+    return ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
   }
   if (text === MENU_BTN_OEM) {
     await ensureStartedCommands(ctx.chat.id);
@@ -2435,7 +2436,7 @@ bot.on('text', async (ctx) => {
       pendingBrandSelection: null,
       lastVagService: 'oem_history',
     });
-    return ctx.reply('Отправьте VIN для проверки истории по дилерской базе (17 символов).', buildReplyMainKeyboard());
+    return ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
   }
   if (text === MENU_BTN_RF) {
     await ensureStartedCommands(ctx.chat.id);
@@ -2444,7 +2445,7 @@ bot.on('text', async (ctx) => {
       processing: false,
       pendingBrandSelection: null,
     });
-    return ctx.reply('Отправьте VIN автомобиля для проверки по РФ (17 символов).', buildReplyMainKeyboard());
+    return ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
   }
   const chatId = ctx.chat.id;
   const state = getState(chatId);
@@ -2521,7 +2522,7 @@ bot.on('text', async (ctx) => {
     let result;
     try { result = await apiAssistCheck(vin); }
     catch (e) {
-      await ctx.reply('Ошибка при обращении к открытой российской базе (сеть/timeout). Запускаю бесплатную проверку по другим каналам ......');
+      await ctx.reply('ОСервер ГИБДД временно недоступен...');
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
         const lines = [`Отчёт по открытым базам по VIN ${vin}:`];
@@ -2553,7 +2554,7 @@ bot.on('text', async (ctx) => {
       return;
     } else {
       if (result.code === 403 || (result.raw && result.raw.error_code && (result.raw.error_code === 40304 || result.raw.error_code === 40305))) {
-        await ctx.reply('Запрос к открытым базам вернул ошибку доступа/лимита. Запускаю бесплатную проверку другим каналам...');
+        await ctx.reply('Сейчас ервер ГИБДД временно недоступен. Запускаю бесплатную проверку по другим каналам...');
         const v = await vpicDecode(vin);
         if (v.ok && v.report && Object.keys(v.report).length) {
           const lines = [`Отчёт по VIN ${vin}:`];
@@ -2567,7 +2568,7 @@ bot.on('text', async (ctx) => {
         return;
       }
 
-      await ctx.reply('В российскиз открытых базах данных не нашли. Делаю бесплатную проверку другим каналам...');
+      await ctx.reply('Данный VIN не найден в базе ГИБДД России...');
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
         const lines = [`Отчёт по VIN ${vin}:`];
@@ -2590,7 +2591,7 @@ bot.on('text', async (ctx) => {
 async function runFreeRfTronk(ctx, vin) {
   const chatId = ctx.chat.id;
   try {
-    await ctx.reply('✅ Подписка подтверждена. Запускаю бесплатную полную проверку по РФ…');
+    await ctx.reply('✅ Подписка подтверждена.\n ✨Запускаю БЕСПЛАТНУЮ полную проверку по РФ (по вашей подписке). Это может занять несколько минут.');
     const res = await tronkFetchReportJson({ vin, extra: { chatId } });
     if (res.ok) {
       await rfFreeStore.setUsedNow(chatId);
@@ -2611,11 +2612,11 @@ async function showSubscribeGate(ctx) {
     : RF_SUBS_CHANNEL;
   const kb = Markup.inlineKeyboard([
     [Markup.button.url('🔔 Открыть канал', link)],
-    [Markup.button.callback('Я подписался(ась) — проверить', 'rf_free_check_sub')],
+    [Markup.button.callback('Проверить подписку', 'rf_free_check_sub')],
     [Markup.button.callback('⬅️ Назад к выбору типа', 'back_to_type')],
   ]);
   await ctx.reply(
-    'Чтобы получить 1 бесплатную полную проверку по РФ — подпишитесь на канал и нажмите «Я подписался(ась) — проверить».',
+    '❗️Чтобы БЕСПЛАТНО получить полный отчёт по РФ — подпишитесь на наш телеграмм канал и возвращайтесь за подарком.\n После подписки нажмите кнопку «Проверить подписку»',
     kb
   );
 }
@@ -2673,7 +2674,7 @@ bot.action('full_check_rf', async (ctx) => {
   // 3) Платный поток
   try {
     const left = await rfFreeStore.remainingMs(chatId);
-    const note = `Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.`;
+    const note = `⚠️ Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.\nДождитесь окончания времени, или получите проверку сейчас⬇️`;
     const { confirmationUrl, paymentId } = await ykcCreatePayment({
       chatId, vin, flow: 'tronk_rf', amount: YKC_PRICE_TRONK_RF,
       description: `Полная проверка по РФ — VIN ${vin}`, capture: true
@@ -2820,7 +2821,7 @@ app.all('/vagvin/webhook', upload.any(), async (req, res) => {
     const links = [url, link, report_url].filter(Boolean);
 
     const mainMsg =
-      `📩 Получен отчёт по ${_humanVagType(job.type)} VIN ${vin}\n\n` +
+      `📩 Ваш отчет по  ${_humanVagType(job.type)} готов! Номер VIN: ${vin}\n\n` +
       (status != null ? `\nСтатус: ${status}` : '');
 
     try {
