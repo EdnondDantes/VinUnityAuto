@@ -254,7 +254,7 @@ const REPORT_HBS = `
     <div class="container">
 
       <a class="brand" href="https://unityauto.ru/" target="_blank" rel="noopener">
-        <img src="{{brandLogo}}" alt="UNITY AUTO" />
+        <img src="{{brandLogoUrl}}" alt="UNITY AUTO" />
       </a>
 
       <!-- Заголовок -->
@@ -1247,8 +1247,8 @@ function mapTronkToTemplate(json) {
     reportNumber: d.ReportNumber || '',
     region: d.RegionGosnomer || '',
     whereVin: { title: d.WhereVin?.Title || '', url: d.WhereVin?.Url || '' },
-    brandLogo: d.MarkaLogoUrl || BRAND_LOGO_URL,
-    brandLogoUrl: d.MarkaLogoUrl || BRAND_LOGO_URL,
+    brandLogo:  BRAND_LOGO_URL || '',
+    brandLogoUrl: BRAND_LOGO_URL || '',
     car, flags, gosnumbers: d.GosnumberList || [],
     ownership, mileage, dtp,
     otherDtp: d.OtherSourceDtp || [],
