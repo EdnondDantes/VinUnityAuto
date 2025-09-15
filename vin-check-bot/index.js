@@ -91,7 +91,7 @@ body {
 .hero .imgwrap { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
 .hero img { width: 100%; height: 260px; object-fit: cover; display: block; }
 .brand { float: right; margin: 4px 0 0 10px; text-decoration: none; }
-.brand img { height: 24px; display: block; }
+.brand img { height: 48px; display: block; }
 .brand .logo-text { font-weight: 800; letter-spacing: .5px; color: #0f172a; }
 
 /* section */
@@ -254,7 +254,7 @@ const REPORT_HBS = `
     <div class="container">
 
       <a class="brand" href="https://unityauto.ru/" target="_blank" rel="noopener">
-        <img src="{{brandLogoUrl}}" alt="UNITY AUTO" />
+        <img src="{{brandLogo}}" alt="UNITY AUTO" />
       </a>
 
       <!-- Заголовок -->
@@ -1247,8 +1247,7 @@ function mapTronkToTemplate(json) {
     reportNumber: d.ReportNumber || '',
     region: d.RegionGosnomer || '',
     whereVin: { title: d.WhereVin?.Title || '', url: d.WhereVin?.Url || '' },
-    brandLogo:  BRAND_LOGO_URL || '',
-    brandLogoUrl: BRAND_LOGO_URL || '',
+    brandLogo:  BRAND_LOGO_URL || '', hero, photos,
     car, flags, gosnumbers: d.GosnumberList || [],
     ownership, mileage, dtp,
     otherDtp: d.OtherSourceDtp || [],
