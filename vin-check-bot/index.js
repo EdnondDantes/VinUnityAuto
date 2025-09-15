@@ -254,7 +254,7 @@ const REPORT_HBS = `
     <div class="container">
 
       <a class="brand" href="https://unityauto.ru/" target="_blank" rel="noopener">
-        <img src="{{brandLogoUrl}}" alt="UNITY AUTO" />
+        <img src="{{brandLogo}}" alt="UNITY AUTO" />
       </a>
 
       <!-- Заголовок -->
@@ -887,6 +887,11 @@ const LEGAL_TERMS_URL =
   process.env.LEGAL_TERMS_URL ||
   (_PUBLIC_BASE ? `${_PUBLIC_BASE}/legal/terms` : '/legal/terms');
 
+ const BRAND_LOGO_URL =
+   process.env.BRAND_LOGO_URL
+   || (_PUBLIC_BASE ? `${_PUBLIC_BASE}/img/unity-auto.png`
+                    : `http://127.0.0.1:${PORT}/img/unity-auto.png`);
+
 const LEGAL_PRIVACY_PDF_PATH = process.env.LEGAL_PRIVACY_PDF_PATH
   || path.join(__dirname, 'public', 'legal', 'Политика конфиденциальности.pdf');
 const LEGAL_TERMS_PDF_PATH   = process.env.LEGAL_TERMS_PDF_PATH
@@ -1067,6 +1072,8 @@ const msToHuman = (ms) => {
 
 /* ========================== TRONK → PDF (минимальные константы + генератор) ========================== */
 
+
+
 /** helpers */
 Handlebars.registerHelper('yesno', v => (v ? 'Да' : 'Нет'));
 
@@ -1240,7 +1247,8 @@ function mapTronkToTemplate(json) {
     reportNumber: d.ReportNumber || '',
     region: d.RegionGosnomer || '',
     whereVin: { title: d.WhereVin?.Title || '', url: d.WhereVin?.Url || '' },
-    brandLogo: d.MarkaLogoUrl || '', hero, photos,
+    brandLogo: d.MarkaLogoUrl || BRAND_LOGO_URL,
+    brandLogoUrl: d.MarkaLogoUrl || BRAND_LOGO_URL,
     car, flags, gosnumbers: d.GosnumberList || [],
     ownership, mileage, dtp,
     otherDtp: d.OtherSourceDtp || [],
@@ -1385,17 +1393,17 @@ const sendTypeSelection = async (ctx) => {
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   await ensureStartedCommands(chatId);
   await ctx.reply('🙌 Выберите тип проверки:', Markup.inlineKeyboard([
-    [Markup.button.callback('Полная проверка истории авто по РФ', 'type_history')],
-    [Markup.button.callback('Проверка истории по дилерской базе', 'type_oem_history')],
-    [Markup.button.callback('Проверка комплектации', 'type_equipment')]
+    [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
+    [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
+    [Markup.button.callback('👜 Проверка комплектации', 'type_equipment')]
   ]));
 };
 async function sendTypeSelectionByChat(chatId) {
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   const kb = Markup.inlineKeyboard([
-    [Markup.button.callback('Полная проверка истории авто по РФ', 'type_history')],
-    [Markup.button.callback('Проверка истории по дилерской базе', 'type_oem_history')],
-    [Markup.button.callback('Проверка комплектации по VIN', 'type_equipment')]
+    [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
+    [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
+    [Markup.button.callback('👜 Проверка комплектации по VIN', 'type_equipment')]
 
   ]);
   await ensureStartedCommands(chatId);
@@ -1449,14 +1457,14 @@ async function isUserSubscribed(chatId) {
 /* Карточка РФ + меню РФ */
 const sendMinimalVehicleInfo = async (ctx, vehicle) => {
   const lines = [
-    `🔎 Краткая информация по автомобилю:`,
-    `VIN: ${vehicle.vin || '—'}`,
-    `Марка/модель: ${vehicle.brand || vehicle.model || '—'}`,
-    `Год: ${vehicle.year || '—'}`,
-    `Цвет: ${vehicle.color || '—'}`,
-    `Объем двигателя: ${vehicle.engineVolume || '—'}`,
-    `Номер двигателя: ${vehicle.engineNumber || '—'}`,
-    `ПТС: ${vehicle.vehiclePassportNumber || '—'}`,
+    `📄Подготовил отчёт по Вашему запросу:`,
+    `🚘VIN: ${vehicle.vin || '—'}`,
+    ` 🛞Марка/модель: ${vehicle.brand || vehicle.model || '—'}`,
+    ` 🛞Год: ${vehicle.year || '—'}`,
+    ` 🛞Цвет: ${vehicle.color || '—'}`,
+    ` 🛞Объем двигателя: ${vehicle.engineVolume || '—'}`,
+    ` 🛞Номер двигателя: ${vehicle.engineNumber || '—'}`,
+    ` 🛞ПТС: ${vehicle.vehiclePassportNumber || '—'}`,
   ];
   if (vehicle.events && vehicle.events.length) {
     lines.push('', 'Найденные события:');
@@ -1619,6 +1627,60 @@ const vpicDecode = async (vin) => {
     return { ok: true, report, raw: r.data };
   } catch (e) { return { ok: false, error: e.message || String(e) }; }
 };
+
+/* ====================== vPIC → RU локализация + рендер ====================== */
+// Карта меток (Variable → русское название)
+const VPIC_LABELS_RU = Object.freeze({
+  'Make': ' 🛞Марка',
+  'Model': ' 🛞Модель',
+  'Trim': 'К 🛞омплектация',
+  'Model Year': ' 🛞Год модели',
+  'Vehicle Type': ' 🛞Тип ТС',
+  'Body Class': ' 🛞Класс кузова',
+  'Manufacturer': ' 🛞Производитель',
+  'Plant Country': ' 🛞Страна сборки',
+  'Plant City': ' 🛞Город сборки',
+  'Fuel Type - Primary': ' 🛞Тип топлива',
+  'Engine Model': ' 🛞Модель двигателя',
+  'Engine Number of Cylinders': ' 🛞Число цилиндров',
+  'Engine Displacement (L)': ' 🛞Объём двигателя (л)',
+  'Engine Displacement (CI)': ' 🛞Объём двигателя (дюйм³)',
+  'Transmission Style': ' 🛞Тип КПП',
+  'Transmission Speeds': ' 🛞КПП (ступеней)',
+});
+
+// Небольшой словарик самых частых значений для читабельности (опционально)
+const VPIC_VALUE_RU = Object.freeze({
+  'PASSENGER CAR': 'Легковой автомобиль',
+  'SPORT UTILITY VEHICLE (SUV)': 'Внедорожник (SUV)',
+  'MULTIPURPOSE PASSENGER VEHICLE (MPV)': 'Многоцелевой легковой автомобиль (MPV)',
+  'TRUCK': 'Грузовой автомобиль',
+});
+
+function renderVpicReportRu({ report, vin, title = '📄Подготовил отчёт по Вашему запросу\n' }) {
+  if (!report || !Object.keys(report).length) {
+    return `${title} по VIN ${vin}:\nДанные не найдены.`;
+  }
+  // Порядок полей, который логично показывать первым
+  const keysOrder = [
+    'Make','Model','Trim','Model Year',
+    'Vehicle Type','Body Class',
+    'Manufacturer','Plant Country','Plant City',
+    'Fuel Type - Primary',
+    'Engine Model','Engine Number of Cylinders','Engine Displacement (L)',
+    'Transmission Style','Transmission Speeds',
+  ];
+  const lines = [`${title} по VIN ${vin}:`];
+  for (const k of keysOrder) {
+    const raw = report[k];
+    if (!raw) continue;
+    const label = VPIC_LABELS_RU[k] || k;
+    const value = (k === 'Vehicle Type' && VPIC_VALUE_RU[raw]) ? VPIC_VALUE_RU[raw] : raw;
+    lines.push(`${label}: ${value}`);
+  }
+  return lines.join('\n');
+}
+
 
 /* ========================== vagvin submit ========================== */
 const genUid = (p='uid') => `${p}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
@@ -2516,19 +2578,16 @@ bot.on('text', async (ctx) => {
 
   /* 3) РФ (api-assist + vPIC) — карточка */
   setState(chatId, { processing: true, lastVin: vin, stage: 'processing' });
-  await ctx.reply('Запрашиваю данные в открытой российской базе ...');
+  await ctx.reply('🔄Запрашиваю данные в открытой базе РФ ...');
 
   try {
     let result;
     try { result = await apiAssistCheck(vin); }
     catch (e) {
-      await ctx.reply('ОСервер ГИБДД временно недоступен...');
+      await ctx.reply('Сервер ГИБДД временно недоступен...');
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
-        const lines = [`Отчёт по открытым базам по VIN ${vin}:`];
-        ['Make','Model','Model Year','Vehicle Type','Manufacturer','Engine Model','Engine Number of Cylinders']
-          .forEach(k => { if (v.report[k]) lines.push(`${k}: ${v.report[k]}`); });
-        await ctx.reply(lines.join('\n'));
+        await ctx.reply(renderVpicReportRu({ report: v.report, vin, title: 'Отчёт по открытым базам' }));
       } else {
         await ctx.reply(`Данных по этому VIN в открытых базах не найдено.${v.ok === false ? ` Ошибка: ${v.error}` : ''}`);
       }
@@ -2554,29 +2613,23 @@ bot.on('text', async (ctx) => {
       return;
     } else {
       if (result.code === 403 || (result.raw && result.raw.error_code && (result.raw.error_code === 40304 || result.raw.error_code === 40305))) {
-        await ctx.reply('Сейчас ервер ГИБДД временно недоступен. Запускаю бесплатную проверку по другим каналам...');
+        await ctx.reply('🚫Сейчас сервер ГИБДД временно недоступен. Запускаю бесплатную проверку по другим каналам...');
         const v = await vpicDecode(vin);
         if (v.ok && v.report && Object.keys(v.report).length) {
-          const lines = [`Отчёт по VIN ${vin}:`];
-          ['Make','Model','Model Year','Vehicle Type','Manufacturer','Engine Model','Engine Number of Cylinders']
-            .forEach(k => { if (v.report[k]) lines.push(`${k}: ${v.report[k]}`); });
-          await ctx.reply(lines.join('\n'));
+          await ctx.reply(renderVpicReportRu({ report: v.report, vin, title: 'Отчёт по открытым базам' }));
         } else {
-          await ctx.reply(`Данных по этому VIN в открытых базах не найдено.${v.ok === false ? ` Ошибка: ${v.error}` : ''}`);
+          await ctx.reply(`🚫Данных по этому VIN в открытых базах не найдено.${v.ok === false ? ` Ошибка: ${v.error}` : ''}`);
         }
         await sendRfMenuOnly(ctx, vin);
         return;
       }
 
-      await ctx.reply('Данный VIN не найден в базе ГИБДД России...');
+      await ctx.reply('🚫Данный VIN не найден в базе ГИБДД России...');
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
-        const lines = [`Отчёт по VIN ${vin}:`];
-        ['Make','Model','Model Year','Vehicle Type','Manufacturer','Engine Model','Engine Number of Cylinders']
-          .forEach(k => { if (v.report[k]) lines.push(`${k}: ${v.report[k]}`); });
-        await ctx.reply(lines.join('\n'));
+        await ctx.reply(renderVpicReportRu({ report: v.report, vin, title: 'Отчёт по открытым базам' }));
       } else {
-        await ctx.reply(`Данных по этому VIN в открытых базах данных не найдены.${v.ok === false ? ` Ошибка: ${v.error}` : ''}`);
+        await ctx.reply(`🚫Данных по этому VIN в открытых базах данных не найдены.${v.ok === false ? ` Ошибка: ${v.error}` : ''}`);
       }
       await sendRfMenuOnly(ctx, vin);
       return;
@@ -2655,7 +2708,7 @@ bot.action('full_check_rf', async (ctx) => {
   if (!vin) {
     await ctx.reply('VIN не найден в текущем сеансе. Введите VIN для проверки по РФ.');
     setState(chatId, { stage:'await_vin', processing:false });
-    return;
+    return
   }
 
   // 1) Проверка подписки
@@ -2674,7 +2727,7 @@ bot.action('full_check_rf', async (ctx) => {
   // 3) Платный поток
   try {
     const left = await rfFreeStore.remainingMs(chatId);
-    const note = `⚠️ Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.\nДождитесь окончания времени, или получите проверку сейчас⬇️`;
+    const note = ` Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.\nДождитесь окончания времени, или получите проверку сейчас⬇️`;
     const { confirmationUrl, paymentId } = await ykcCreatePayment({
       chatId, vin, flow: 'tronk_rf', amount: YKC_PRICE_TRONK_RF,
       description: `Полная проверка по РФ — VIN ${vin}`, capture: true
@@ -2724,6 +2777,7 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/img', express.static(path.join(__dirname, 'public', 'img')));
 
 /* === LEGAL: раздача /legal + алиасы === */
 const LEGAL_DIR = path.resolve(__dirname, 'public', 'legal');
