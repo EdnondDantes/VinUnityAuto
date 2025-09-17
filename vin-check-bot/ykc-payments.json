@@ -13,5 +13,210 @@
     "chatId": 7427455385,
     "vin": "JN1FANF15U0109775",
     "createdAt": "2025-09-03T19:38:44.459Z"
+  },
+  "305b4a90-000f-5001-9000-1f0ee93484cc": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T10:07:30.375Z",
+    "authHandled": true
+  },
+  "305b4c0e-000f-5001-9000-1e0e8a7cbe40": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_equipment",
+    "updatedAt": "2025-09-16T10:13:51.953Z",
+    "authHandled": true
+  },
+  "305b6e8e-000f-5001-8000-168418e62b21": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_equipment",
+    "updatedAt": "2025-09-16T12:41:03.635Z",
+    "authHandled": true
+  },
+  "305b6fcb-000f-5000-8000-145b48a9937f": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T12:46:18.201Z",
+    "authHandled": true
+  },
+  "305b7392-000f-5001-8000-1cb4e0463347": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:02:31.341Z",
+    "authHandled": true
+  },
+  "305b73c5-000f-5000-8000-1e0c1095d45b": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:03:15.440Z",
+    "authHandled": true
+  },
+  "305b73f1-000f-5000-b000-1308c838d6ce": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T13:04:50.917Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true,
+    "tronkTaskId": 30867184,
+    "tronkCompleted": true
+  },
+  "hist:tronk_rf:1803098143:JTEBR3FJ30K226257": {
+    "lastPaymentId": "305b8048-000f-5000-b000-1f754f969407",
+    "tronkTaskId": 30867613,
+    "completedAt": "2025-09-16T13:57:14.639Z",
+    "updatedAt": "2025-09-16T13:57:14.640Z"
+  },
+  "305b74a7-000f-5000-b000-13f3e0592475": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:07:05.190Z",
+    "authHandled": true
+  },
+  "305b7967-000f-5000-b000-100319981fce": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:27:20.085Z",
+    "authHandled": true
+  },
+  "305b79d6-000f-5000-b000-14761fb6a0cc": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:29:07.338Z",
+    "authHandled": true
+  },
+  "305b7ad9-000f-5000-b000-1d4c2152de26": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:33:28.397Z",
+    "authHandled": true
+  },
+  "305b7b0c-000f-5000-b000-165d6825d264": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T13:35:11.362Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true,
+    "tronkTaskId": 30867431,
+    "tronkCompleted": true
+  },
+  "305b7ba7-000f-5001-8000-17655b773372": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T13:37:50.634Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true,
+    "tronkTaskId": 30867446,
+    "tronkCompleted": true
+  },
+  "305b7c05-000f-5000-b000-10d4e309680a": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T13:39:19.659Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true,
+    "tronkTaskId": 30867472,
+    "tronkCompleted": true
+  },
+  "305b7d3e-000f-5001-8000-165815b4bee3": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:43:46.951Z",
+    "authHandled": true
+  },
+  "305b7e7e-000f-5000-b000-19a6a3a95a72": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T13:49:00.025Z",
+    "authHandled": true
+  },
+  "305b8048-000f-5000-b000-1f754f969407": {
+    "status": "succeeded",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T13:57:34.122Z",
+    "succeededHandled": true,
+    "succeededAnnounced": true,
+    "tronkTaskId": 30867613,
+    "tronkCompleted": true
+  },
+  "305b8874-000f-5000-b000-11e1fcfff87d": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T14:31:35.420Z",
+    "authHandled": true
+  },
+  "305b7c6d-000f-5001-8000-1e1517197743": {
+    "status": "canceled",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "tronk_rf",
+    "updatedAt": "2025-09-16T14:41:58.658Z",
+    "canceledHandled": true
+  },
+  "305b8d23-000f-5001-8000-1888d22f6438": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T14:51:33.536Z",
+    "authHandled": true
+  },
+  "305b8d6f-000f-5001-9000-17e170e8509b": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_equipment",
+    "updatedAt": "2025-09-16T14:52:44.883Z",
+    "authHandled": true
+  },
+  "305b912e-000f-5001-8000-1b88642b7568": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_oem",
+    "updatedAt": "2025-09-16T15:08:50.579Z",
+    "authHandled": true
+  },
+  "305b9162-000f-5001-8000-1de37dd59eac": {
+    "status": "waiting_for_capture",
+    "chatId": 1803098143,
+    "vin": "JTEBR3FJ30K226257",
+    "flow": "vagvin_equipment",
+    "updatedAt": "2025-09-16T15:09:38.246Z",
+    "authHandled": true
   }
 }

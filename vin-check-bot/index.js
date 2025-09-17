@@ -1,3 +1,6 @@
+const {
+MSG_AFTER_OEM, MSG_AFTER_EQUIP, MSG_AFTER_RF, MSG_SERVICES_HTML, MSG_PAYMENT_RECEIVED_MANUAL, MSG_SUBS_CONFIRMED_FREE_RF, MSG_REPORT_REQUESTED_OK, MSG_VAG_AWAITING
+} = require('./messages');
 
 // как просил — одной строкой (добавь свои значения)
 const BRANDS_LIST =   ['Alfa Romeo','Alpine','Audi','Bentley','BMW','BMW MOTO','BMW ЭЛЕКТРО',
@@ -840,7 +843,7 @@ const express = require('express');
 const multer = require('multer');
 const { Telegraf, Markup } = require('telegraf');
 const Handlebars = require('handlebars');
-const puppeteer = require('puppeteer'); 
+const puppeteer = require('puppeteer');
 
 // === YooKassa
 const { v4: uuidv4 } = require('uuid');
@@ -869,7 +872,7 @@ const PAYMENTS_STATE_FILE = path.resolve(__dirname, 'ykc-payments.json');
 /* === FREE RF CHECK (1 раз/сутки при подписке) === */
 const RF_FREE_FILE = path.resolve(__dirname, 'rf-free-usage.json');
 const RF_FREE_COOLDOWN_MS = Number(process.env.RF_FREE_COOLDOWN_MS || 24 * 60 * 60 * 1000); // 24 часа
-// Канал с подпиской. Можно передать @username или полную ссылку t.me/...
+// Канал с подпиской
 const RF_SUBS_CHANNEL =
   process.env.FREE_RF_CHANNEL_USERNAME ||
   (() => {
@@ -878,7 +881,7 @@ const RF_SUBS_CHANNEL =
     return m ? '@' + m[1] : '@chan122334';
   })();
 
-/* === LEGAL URLs (ссылки на политику/соглашение) === */
+/* === LEGAL URLs === */
 const _PUBLIC_BASE = (WEBHOOK_PUBLIC_BASE || '').replace(/\/+$/, '');
 const LEGAL_PRIVACY_URL =
   process.env.LEGAL_PRIVACY_URL ||
@@ -887,10 +890,10 @@ const LEGAL_TERMS_URL =
   process.env.LEGAL_TERMS_URL ||
   (_PUBLIC_BASE ? `${_PUBLIC_BASE}/legal/terms` : '/legal/terms');
 
- const BRAND_LOGO_URL =
-   process.env.BRAND_LOGO_URL
-   || (_PUBLIC_BASE ? `${_PUBLIC_BASE}/img/unity-auto.png`
-                    : `http://127.0.0.1:${PORT}/img/unity-auto.png`);
+const BRAND_LOGO_URL =
+  process.env.BRAND_LOGO_URL
+  || (_PUBLIC_BASE ? `${_PUBLIC_BASE}/img/unity-auto.png`
+                   : `http://127.0.0.1:${PORT}/img/unity-auto.png`);
 
 const LEGAL_PRIVACY_PDF_PATH = process.env.LEGAL_PRIVACY_PDF_PATH
   || path.join(__dirname, 'public', 'legal', 'Политика конфиденциальности.pdf');
@@ -905,7 +908,18 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
+bot.use((ctx, next) => {
+  ctx.replyHTML = (text, extra = {}) =>
+    ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...extra });
+  return next();
+});
+
+const sendHTML = (chatId, text, extra = {}) =>
+  bot.telegram.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true, ...extra });
+
 /* ========================== BRAND SUPPORT ROUTING ========================== */
+// ВАЖНО: BRANDS_LIST и WMI_TO_BRAND уже объявлены выше в вашем коде и тут не изменяются.
+
 // Синонимы и нормализация имён брендов к виду из BRANDS_LIST
 const BRAND_SYNONYMS = new Map([
   ['LandRover', 'Land Rover'],
@@ -920,7 +934,6 @@ function normalizeBrand(name) {
   if (!name) return null;
   let n = String(name).trim().replace(/\s+/g, ' ');
   if (BRAND_SYNONYMS.has(n)) n = BRAND_SYNONYMS.get(n);
-  // подгоняем регистр/написание под BRANDS_LIST, если совпало по == без регистра
   const fromList = BRANDS_LIST.find(b => b.toLowerCase() === n.toLowerCase());
   return fromList || n;
 }
@@ -1070,9 +1083,8 @@ const msToHuman = (ms) => {
   return [h?`${h} ч`:null, m?`${m} м`:null].filter(Boolean).join(' ');
 };
 
-/* ========================== TRONK → PDF (минимальные константы + генератор) ========================== */
-
-
+/* ========================== TRONK → PDF и шаблоны ========================== */
+/* ВАЖНО: REPORT_CSS и REPORT_HBS уже объявлены выше в вашем коде и тут не изменяются. */
 
 /** helpers */
 Handlebars.registerHelper('yesno', v => (v ? 'Да' : 'Нет'));
@@ -1307,7 +1319,7 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
     try { fsSync.mkdirSync(path.dirname(pdfPath), { recursive: true }); } catch {}
 
     const browser = await puppeteer.launch({
-      headless: 'new', // можно true; 'new' убирает варнинг
+      headless: 'new',
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
       args: [
         '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
@@ -1346,6 +1358,7 @@ const getState = (chatId) =>
     lastRfCardText: null,
     lastVagService: null, // 'equipment' | 'oem_history'
     paymentMenu: null,
+    ephemeral: {} // { [tag]: message_id }
   };
 const setState = (chatId, patch) => {
   const key = String(chatId);
@@ -1353,6 +1366,42 @@ const setState = (chatId, patch) => {
   userState.set(key, { ...prev, ...patch });
 };
 
+/* ===== Live Messages helpers (удаляем «живые» меню, не трогая информативные сообщения) ===== */
+const EPHTAGS = Object.freeze({
+  PAYMENT: 'payment',
+  RF_PROGRESS: 'rf_progress',
+});
+async function deleteMessageById(chatId, messageId) {
+  if (!messageId) return;
+  try { await bot.telegram.deleteMessage(chatId, messageId); } catch {}
+}
+async function deleteCallbackMessage(ctx) {
+  try { await ctx.deleteMessage(); } catch {}
+}
+function setEphemeralTag(chatId, tag, messageId) {
+  const st = getState(chatId);
+  const ephem = { ...(st.ephemeral || {}) };
+  ephem[tag] = messageId;
+  setState(chatId, { ephemeral: ephem });
+}
+async function deleteEphemeralTag(chatId, tag) {
+  const st = getState(chatId);
+  const ephem = { ...(st.ephemeral || {}) };
+  if (ephem[tag]) {
+    await deleteMessageById(chatId, ephem[tag]);
+    delete ephem[tag];
+    setState(chatId, { ephemeral: ephem });
+  }
+}
+
+async function sendRfProgress(ctx, text) {
+  const chatId = ctx.chat.id;
+  await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
+  const sent = await ctx.reply(text);
+  setEphemeralTag(chatId, EPHTAGS.RF_PROGRESS, sent.message_id);
+}
+
+/* === Валидация VIN === */
 const vinValidate = (vinRaw) => {
   if (!vinRaw) return false;
   const vin = String(vinRaw).trim().toUpperCase();
@@ -1361,15 +1410,12 @@ const vinValidate = (vinRaw) => {
 };
 
 const buildRfKeyboard = () => Markup.inlineKeyboard([
-  // [Markup.button.callback('Ввести ещё один VIN', 'enter_another_vin')],
   [Markup.button.callback('Полная проверка авто по РФ', 'full_check_rf')],
   [Markup.button.callback('Назад к выбору типа', 'back_to_type')]
 ]);
 
 const buildStartKeyboard = () =>
-  Markup.inlineKeyboard([
-    [Markup.button.callback('🚀 Начать', 'start_flow')]
-  ]);
+  Markup.inlineKeyboard([[Markup.button.callback('🚀 Начать', 'start_flow')]]);
 
 const MENU_BTN_EQUIPMENT = 'Проверка комплектации по VIN';
 const MENU_BTN_OEM       = 'Проверка истории по дилерской базе';
@@ -1384,14 +1430,14 @@ const buildReplyMainKeyboard = () =>
       [MENU_BTN_RF],
       [MENU_BTN_MAIN],
     ],
-  ).resize(); // постоянная клавиатура под полем ввода, без слэшей
+  ).resize();
 
 /* === Выбор типа === */
 const sendTypeSelection = async (ctx) => {
   const chatId = ctx.chat.id;
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   await ensureStartedCommands(chatId);
-  await ctx.reply('🙌 Выберите тип проверки:', Markup.inlineKeyboard([
+  await ctx.replyHTML(MSG_SERVICES_HTML, Markup.inlineKeyboard([
     [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
     [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
     [Markup.button.callback('👜 Проверка комплектации', 'type_equipment')]
@@ -1403,10 +1449,9 @@ async function sendTypeSelectionByChat(chatId) {
     [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
     [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
     [Markup.button.callback('👜 Проверка комплектации по VIN', 'type_equipment')]
-
   ]);
   await ensureStartedCommands(chatId);
-  await bot.telegram.sendMessage(chatId, '🙌Выберите тип проверки автомобиля:', kb);
+  await bot.telegram.sendMessage(chatId, MSG_SERVICES_HTML, kb);
 }
 
 /* === Пост-меню после отчётов vagvin === */
@@ -1423,12 +1468,29 @@ const buildPostMenuKeyboard = (lastVagService, rfNeedsNewVin = false) => {
 };
 const sendPostMenu = async (ctx, { rfNeedsNewVin = false } = {}) => {
   const st = getState(ctx.chat.id);
-  await ctx.reply(':🔁Выберите', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+  const text =
+    st.lastVagService === 'oem_history'
+      ? MSG_AFTER_OEM
+      : MSG_AFTER_EQUIP
+  await ctx.replyHTML(text, buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
 };
 async function sendPostMenuByChat(chatId, { rfNeedsNewVin = false } = {}) {
   const st = getState(chatId);
-  await bot.telegram.sendMessage(chatId, '🔁Выберите:', buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+  const text =
+    st.lastVagService === 'oem_history'
+      ? MSG_AFTER_OEM
+      : MSG_AFTER_EQUIP
+  await sendHTML(chatId, text, buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
 }
+
+async function sendPostMenuAwaitingByChat(chatId, { rfNeedsNewVin = false } = {}) {
+  const st = getState(chatId);
+  await sendHTML(chatId, MSG_VAG_AWAITING, buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+}
+const sendPostMenuAwaiting = async (ctx, { rfNeedsNewVin = false } = {}) => {
+  const st = getState(ctx.chat.id);
+  await ctx.replyHTML(MSG_VAG_AWAITING, buildPostMenuKeyboard(st.lastVagService, rfNeedsNewVin));
+};
 
 /* === Пост-меню после ПОЛНОЙ РФ-проверки === */
 const buildPostMenuAfterRF = () => Markup.inlineKeyboard([
@@ -1436,9 +1498,9 @@ const buildPostMenuAfterRF = () => Markup.inlineKeyboard([
   [Markup.button.callback('Проверка комплектации по VIN', 'type_equipment')],
   [Markup.button.callback('Ввести ещё один VIN (полная проверка)', 'full_check_rf_newvin')]
 ]);
-const sendPostMenuAfterRF = async (ctx) => { await ctx.reply('🔁Выберите:', buildPostMenuAfterRF()); };
+const sendPostMenuAfterRF = async (ctx) => { await ctx.reply(MSG_AFTER_RF, buildPostMenuAfterRF()); };
 async function sendPostMenuAfterRFByChat(chatId) {
-  await bot.telegram.sendMessage(chatId, '🔁Выберите:', buildPostMenuAfterRF());
+  await sendHTML(chatId, MSG_AFTER_RF, buildPostMenuAfterRF());
 }
 
 /* === Проверка подписки на канал === */
@@ -1453,7 +1515,7 @@ async function isUserSubscribed(chatId) {
   }
 }
 
-/* Карточка РФ + меню РФ */
+/* Карточка РФ + меню РФ (эта ИНФОРМАЦИЯ НЕ удаляется) */
 const sendMinimalVehicleInfo = async (ctx, vehicle) => {
   const lines = [
     `📄Подготовил отчёт по Вашему запросу:`,
@@ -1628,7 +1690,6 @@ const vpicDecode = async (vin) => {
 };
 
 /* ====================== vPIC → RU локализация + рендер ====================== */
-// Карта меток (Variable → русское название)
 const VPIC_LABELS_RU = Object.freeze({
   'Make': ' 🛞Марка',
   'Model': ' 🛞Модель',
@@ -1648,7 +1709,6 @@ const VPIC_LABELS_RU = Object.freeze({
   'Transmission Speeds': ' 🛞КПП (ступеней)',
 });
 
-// Небольшой словарик самых частых значений для читабельности (опционально)
 const VPIC_VALUE_RU = Object.freeze({
   'PASSENGER CAR': 'Легковой автомобиль',
   'SPORT UTILITY VEHICLE (SUV)': 'Внедорожник (SUV)',
@@ -1660,7 +1720,6 @@ function renderVpicReportRu({ report, vin, title = '📄Подготовил о�
   if (!report || !Object.keys(report).length) {
     return `${title} по VIN ${vin}:\nДанные не найдены.`;
   }
-  // Порядок полей, который логично показывать первым
   const keysOrder = [
     'Make','Model','Trim','Model Year',
     'Vehicle Type','Body Class',
@@ -1679,7 +1738,6 @@ function renderVpicReportRu({ report, vin, title = '📄Подготовил о�
   }
   return lines.join('\n');
 }
-
 
 /* ========================== vagvin submit ========================== */
 const genUid = (p='uid') => `${p}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
@@ -1794,7 +1852,7 @@ const setMenuButtonDefault = async (chatId) => {
     }
   } catch (e) { console.warn('setChatMenuButton failed:', e?.message || e); }
 };
-// Совместимый shim: в местах, где раньше настраивались команды — теперь чистим их
+// shim
 const ensureStartedCommands = async (chatId) => {
   await clearCommandsForChat(chatId);
   await setMenuButtonDefault(chatId);
@@ -1859,7 +1917,7 @@ async function ykcCancelPayment(paymentId) {
   return yoo.cancelPayment(paymentId, idemp);
 }
 
-/** Мягкий и надёжный capture с повторами и вариантами тела */
+/** Мягкий capture с повторами */
 async function ykcCaptureWithRetries(paymentId, opts = {}) {
   const {
     explicitAmount, currency,
@@ -1922,7 +1980,7 @@ async function ykcCaptureWithRetries(paymentId, opts = {}) {
   return { ok: last.status === 'succeeded', payment: last, canceled: last.status === 'canceled', last };
 }
 
-/* === Refund helper — используем только если деньги реально списались по ошибке === */
+/* === Refund helper === */
 async function ykcRefundPayment({ paymentId, paymentObj, amountValue, currency, description }) {
   let payment = paymentObj;
   if (!payment) payment = await yoo.getPayment(paymentId);
@@ -1958,7 +2016,7 @@ async function ykcRefundPayment({ paymentId, paymentObj, amountValue, currency, 
   }
 }
 
-/** ОБНОВЛЕНО: текст оферты + опциональный note + кнопки на документы */
+/** Показ оплаты (живое меню: удаляется после успешной оплаты/выхода) */
 async function showPaymentPrompt(ctx, { title, vin, amount, url, backAction, note }) {
   const lines = [
     note ? `⚠️ ${note}` : null,
@@ -1971,12 +2029,17 @@ async function showPaymentPrompt(ctx, { title, vin, amount, url, backAction, not
 
   const menuId = genUid('menu');
   const chatId = ctx.chat.id;
+
+  // Снесём предыдущее меню оплаты, если зависло
+  await deleteEphemeralTag(chatId, EPHTAGS.PAYMENT);
+
   const paymentMenu = {
     id: menuId,
     createdAt: new Date().toISOString(),
     sent: { privacy: false, terms: false },
     inFlight: { privacy: false, terms: false },
     ttlMs: 30 * 60 * 1000, // 30 минут
+    messageId: null
   };
   setState(chatId, { paymentMenu });
 
@@ -1987,7 +2050,20 @@ async function showPaymentPrompt(ctx, { title, vin, amount, url, backAction, not
     [Markup.button.callback('📄 Пользовательское соглашение', `legal:terms:${menuId}`)]
   ]);
 
-  await ctx.reply(lines.join('\n'), kb);
+  const sent = await ctx.reply(lines.join('\n'), kb);
+
+  // Запомним ID сообщения, чтобы удалить после оплаты
+  paymentMenu.messageId = sent.message_id;
+  setState(chatId, { paymentMenu });
+  setEphemeralTag(chatId, EPHTAGS.PAYMENT, sent.message_id);
+}
+
+async function deletePaymentPromptByChat(chatId) {
+  const st = getState(chatId);
+  const msgId = st.paymentMenu?.messageId;
+  if (msgId) await deleteMessageById(chatId, msgId);
+  await deleteEphemeralTag(chatId, EPHTAGS.PAYMENT);
+  setState(chatId, { paymentMenu: null });
 }
 
 /* ========================== TRONK report (create→check→result) ========================== */
@@ -2001,13 +2077,12 @@ const TRONK_DEBUG_CONSOLE = true;
 
 bot.action(/^legal:(privacy|terms):(.+)$/i, async (ctx) => {
   const chatId = ctx.chat.id;
-  const docType = (ctx.match[1] || '').toLowerCase(); // 'privacy' | 'terms'
+  const docType = (ctx.match[1] || '').toLowerCase();
   const menuIdFromBtn = ctx.match[2];
   const st = getState(chatId);
   const pm = st.paymentMenu;
   const cb = (text) => ctx.answerCbQuery(text).catch(() => {});
 
-  // Валидация актуальности меню + TTL
   const isExpired = () => {
     if (!pm || !pm.createdAt) return true;
     const ttl = Number(pm.ttlMs || 0);
@@ -2015,18 +2090,13 @@ bot.action(/^legal:(privacy|terms):(.+)$/i, async (ctx) => {
     return (Date.now() - new Date(pm.createdAt).getTime()) > ttl;
   };
 
-  if (!pm || pm.id !== menuIdFromBtn || isExpired()) {
+  if (!pm || !pm.id || pm.id !== menuIdFromBtn || isExpired()) {
     return cb('Это меню устарело. Откройте актуальное.');
   }
 
-  if (pm.inFlight?.[docType]) {
-    return cb('Отправляю…');
-  }
-  if (pm.sent?.[docType]) {
-    return cb('Уже отправлял');
-  }
+  if (pm.inFlight?.[docType]) return cb('Отправляю…');
+  if (pm.sent?.[docType]) return cb('Уже отправлял');
 
-  // Обновляем флаги inFlight → защита от дабл-клика
   pm.inFlight = pm.inFlight || {};
   pm.sent = pm.sent || {};
   pm.inFlight[docType] = true;
@@ -2044,7 +2114,6 @@ bot.action(/^legal:(privacy|terms):(.+)$/i, async (ctx) => {
       setState(chatId, { paymentMenu: pm });
       return cb('Отправил PDF');
     }
-    // Фоллбек — отправляем ссылку, тоже считаем как "отправлено"
     const url = docType === 'privacy' ? LEGAL_PRIVACY_URL : LEGAL_TERMS_URL;
     await ctx.reply(url);
     pm.sent[docType] = true;
@@ -2055,7 +2124,6 @@ bot.action(/^legal:(privacy|terms):(.+)$/i, async (ctx) => {
     await ctx.reply('Не удалось отправить документ. Попробуйте позже.');
     return cb('Ошибка отправки');
   } finally {
-    // Снимаем inFlight
     const st2 = getState(chatId);
     const pm2 = st2.paymentMenu || pm;
     if (pm2 && pm2.inFlight) pm2.inFlight[docType] = false;
@@ -2144,7 +2212,7 @@ async function tronkResult({ id }, extra) {
   return { ok: true, data: r.data };
 }
 
-/** Готовность: как только Status === 1, результат можно забирать */
+/** Готовность */
 function tronkIsReady(checkObj) {
   const t = checkObj?.Task;
   return !!t && Number(t.Status) === 1;
@@ -2167,7 +2235,6 @@ async function tronkFetchReportJson({ vin, gosnumber, frame, id, extra = {} } = 
       }
     }
 
-    // Поллинг (умеренный)
     const plan = [
       { totalMs: 5 * 60_000, stepMs: 10_000 },
       { totalMs: 10 * 60_000, stepMs: 30_000 },
@@ -2220,6 +2287,9 @@ async function sendTronkJsonToChat({ chatId, vin, payload }) {
 /* ========================== Post-payment router ========================== */
 async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
   try {
+    // Удалим «живое» меню оплаты
+    await deletePaymentPromptByChat(chatId);
+
     if (flow === 'tronk_rf') {
       if (!TRONK_API_KEY) {
         await bot.telegram.sendMessage(chatId, 'Не задан API_KEY в .env, не могу получить отчёт.');
@@ -2228,7 +2298,7 @@ async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
 
       const prevState = await paymentsStore.get(payment.id);
       if (!prevState?.succeededAnnounced) {
-        await bot.telegram.sendMessage(chatId, 'Успешно ✅. Запрашиваю отчет по Вашему VIN. Это займет некоторое время!\nГотовый отчет придет в этот чат. Все проверенные авто здесь - \nhttps://unityauto.ru/cars. Мы сделали все за вас🙂')
+        await sendHTML(chatId, MSG_REPORT_REQUESTED_OK,);
         await paymentsStore.merge(payment.id, { succeededAnnounced: true });
       }
 
@@ -2245,7 +2315,6 @@ async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
 
         const expKey = `exp:tronk_rf:${chatId}:${vin}`;
         await paymentsStore.del(expKey).catch(()=>{});
-        // после TRONK — корректное пост-меню для РФ
         await sendPostMenuAfterRFByChat(chatId);
       } else {
         await bot.telegram.sendMessage(chatId, `Не удалось получить отчёт: ${res.error || 'ошибка'}`);
@@ -2255,9 +2324,8 @@ async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
     }
 
     if (flow === 'vagvin_equipment' || flow === 'vagvin_oem') {
-      await bot.telegram.sendMessage(chatId, '✅Успешно. Как только отчёт будет готов — пришлю сюда автоматически.');
+      await sendHTML(chatId, MSG_PAYMENT_RECEIVED_MANUAL,);
       setState(chatId, { lastVagService: (flow === 'vagvin_equipment' ? 'equipment' : 'oem_history') });
-      setState(chatId, { paymentMenu: null }); // закрываем текущее меню оплаты
       await sendPostMenuByChat(chatId, { rfNeedsNewVin: true });
       return;
     }
@@ -2275,15 +2343,17 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
     let marka = normalizeBrand(payment?.metadata?.marka || null);
 
     if (!vin || !marka) {
-      await bot.telegram.sendMessage(chatId, 'Оплата авторизована, но не хватает данных (VIN/марка). Авторизацию отменяю — деньги не спишутся.');
+      await bot.telegram.sendMessage(chatId, '⚠️ Оплата авторизована, но не хватает данных (VIN/марка). Авторизацию отменяю — деньги не спишутся.');
       try { await ykcCancelPayment(payment.id); } catch (e) { console.error('[YKC cancel] err', e?.message); }
+      await deletePaymentPromptByChat(chatId);
       return;
     }
     if (flow === 'vagvin_equipment') {
       if (!isBrandSupportedForEquipment(marka)) {
         await bot.telegram.sendMessage(chatId, MSG_EQUIP_UNSUPPORTED(marka));
-        await bot.telegram.sendMessage(chatId, 'Отменяю авторизацию — деньги не спишутся.');
+        await bot.telegram.sendMessage(chatId, '⚠️ Отменяю авторизацию — деньги не спишутся.');
         try { await ykcCancelPayment(payment.id); } catch {}
+        await deletePaymentPromptByChat(chatId);
         await sendPostMenuByChat(chatId);
         return;
       }
@@ -2291,15 +2361,16 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
     } else {
       if (!isBrandSupportedForOem(marka)) {
         await bot.telegram.sendMessage(chatId, MSG_OEM_UNSUPPORTED(marka));
-        await bot.telegram.sendMessage(chatId, 'Отменяю авторизацию — деньги не спишутся.');
+        await bot.telegram.sendMessage(chatId, '⚠️ Отменяю авторизацию — деньги не спишутся.');
         try { await ykcCancelPayment(payment.id); } catch {}
+        await deletePaymentPromptByChat(chatId);
         await sendPostMenuByChat(chatId);
         return;
       }
       command_str = chooseOemCommand(marka);
     }
 
-    await bot.telegram.sendMessage(chatId, `Оплата авторизована ✅. Отправляю запрос (${flow === 'vagvin_equipment' ? 'комплектация' : 'дилерская история'})…`);
+    await sendHTML(chatId, `<b>Ваша оплата получена</b>📱 \nОтправляю запрос (${flow === 'vagvin_equipment' ? 'комплектация' : 'дилерская история'})…`);
 
     const res = await vagvinSubmit({ vin, marka, command_str, chatId, type: flow === 'vagvin_equipment' ? 'equipment' : 'oem_history' });
 
@@ -2312,11 +2383,12 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
       } catch (e) {
         await bot.telegram.sendMessage(chatId, `⚠️ Не удалось отменить авторизацию: ${e.message}. Если средства спишутся — вернём автоматически.`);
       }
+      await deletePaymentPromptByChat(chatId);
       await sendTypeSelectionByChat(chatId);
       return;
     }
 
-    await bot.telegram.sendMessage(chatId, 'Ваша заявка принята  ✅');
+    await sendHTML(chatId, `📥<b>Заявка принята в работу</b>`);
 
     const cap = await ykcCaptureWithRetries(payment.id, {
       explicitAmount: payment?.amount?.value,
@@ -2328,10 +2400,10 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
     });
 
     if (cap.ok) {
-      await bot.telegram.sendMessage(chatId, '✅ Успешно. Как только отчёт будет готов — пришлю сюда автоматически.');
+      await sendHTML(chatId, MSG_PAYMENT_RECEIVED_MANUAL,);
       setState(chatId, { lastVagService: (flow === 'vagvin_equipment' ? 'equipment' : 'oem_history') });
-      setState(chatId, { paymentMenu: null });
-      await sendPostMenuByChat(chatId, { rfNeedsNewVin: true }); 
+      await deletePaymentPromptByChat(chatId);
+      await sendPostMenuAwaitingByChat(chatId, { rfNeedsNewVin: true });
     } else {
       const last = cap.last || (await yoo.getPayment(payment.id));
       if (last.status === 'waiting_for_capture') {
@@ -2342,11 +2414,13 @@ async function onPaymentAuthorized({ chatId, vin, flow, payment }) {
       } else {
         await bot.telegram.sendMessage(chatId, `⚠️ Не удалось подтвердить списание (статус: ${last.status || 'неизвестно'}).`);
       }
+      await deletePaymentPromptByChat(chatId);
     }
   } catch (e) {
     console.error('[onPaymentAuthorized] err', e);
     await bot.telegram.sendMessage(chatId, `Ошибка обработки авторизации: ${e.message}`);
     try { await ykcCancelPayment(payment.id); } catch {}
+    await deletePaymentPromptByChat(chatId);
   }
 }
 
@@ -2363,7 +2437,10 @@ bot.start(async (ctx) => {
 });
 
 /* --- Команды --- */
-bot.command('menu', async (ctx) => { await ensureStartedCommands(ctx.chat.id); return sendTypeSelection(ctx); });
+bot.command('menu', async (ctx) => {
+  await ensureStartedCommands(ctx.chat.id);
+  return sendTypeSelection(ctx); // не шлём «Открываю меню…» чтобы не шуметь
+});
 bot.command('equipment', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
@@ -2382,34 +2459,40 @@ bot.command('rf', async (ctx) => {
 
 bot.action('start_flow', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx); // убрать кнопку «Начать» после нажатия
   await ensureStartedCommands(ctx.chat.id);
   return sendTypeSelection(ctx);
 });
 
-/* --- Инлайн кнопки --- */
+/* --- Инлайн кнопки (живые меню удаляем после клика) --- */
 bot.action('type_equipment', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
-  setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx); // удалить меню «Выберите тип проверки»
+  setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
   await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
 });
 
 bot.action('type_oem_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
-  setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
+  setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
   await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)');
 });
 bot.action('type_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
-  setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
+  setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
+  // ЭТА фраза должна остаться в чате (информативная и требует ответа VIN)
   await ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)');
 });
 
 /* Повторить тот же vagvin-тип, но ввести новый VIN */
 bot.action('vag_again_same', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
   const st = getState(ctx.chat.id);
   if (st.lastVagService === 'oem_history') {
     setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null });
@@ -2429,6 +2512,7 @@ bot.action(/brand_page_(\d+)/, async (ctx) => {
 
 bot.action(/brand_pick_(\d+)/, async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx); // убрать список брендов после выбора
   const idx = parseInt(ctx.match[1], 10);
   const brand = BRANDS_LIST[idx];
   const chatId = ctx.chat.id;
@@ -2476,7 +2560,6 @@ bot.on('text', async (ctx) => {
   const text = (ctx.message.text || '').trim();
   if (text === MENU_BTN_MAIN) {
     await ensureStartedCommands(ctx.chat.id);
-    await ctx.reply('Открываю меню…', buildReplyMainKeyboard());
     return sendTypeSelection(ctx);
   }
   if (text === MENU_BTN_EQUIPMENT) {
@@ -2577,12 +2660,13 @@ bot.on('text', async (ctx) => {
 
   /* 3) РФ (api-assist + vPIC) — карточка */
   setState(chatId, { processing: true, lastVin: vin, stage: 'processing' });
-  await ctx.reply('🔄Запрашиваю данные в открытой базе РФ ...');
+  await sendRfProgress(ctx, '🔄Запрашиваю данные в открытой базе РФ ...');
 
   try {
     let result;
     try { result = await apiAssistCheck(vin); }
     catch (e) {
+      await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
       await ctx.reply('Сервер ГИБДД временно недоступен...');
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
@@ -2596,6 +2680,7 @@ bot.on('text', async (ctx) => {
     }
 
     if (result.found === true) {
+      await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
       const vehicle = result.vehicle || {};
       await sendMinimalVehicleInfo(ctx, {
         vin: vehicle.vin,
@@ -2612,6 +2697,7 @@ bot.on('text', async (ctx) => {
       return;
     } else {
       if (result.code === 403 || (result.raw && result.raw.error_code && (result.raw.error_code === 40304 || result.raw.error_code === 40305))) {
+        await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
         await ctx.reply('🚫Сейчас сервер ГИБДД временно недоступен. Запускаю бесплатную проверку по другим каналам...');
         const v = await vpicDecode(vin);
         if (v.ok && v.report && Object.keys(v.report).length) {
@@ -2624,6 +2710,7 @@ bot.on('text', async (ctx) => {
       }
 
       await ctx.reply('🚫Данный VIN не найден в базе ГИБДД России...');
+      await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
       const v = await vpicDecode(vin);
       if (v.ok && v.report && Object.keys(v.report).length) {
         await ctx.reply(renderVpicReportRu({ report: v.report, vin, title: 'Отчёт по открытым базам' }));
@@ -2634,6 +2721,7 @@ bot.on('text', async (ctx) => {
       return;
     }
   } finally {
+    await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
     const cur = getState(chatId);
     if (cur.stage !== 'processing' && cur.processing) setState(chatId, { processing: false });
   }
@@ -2643,7 +2731,7 @@ bot.on('text', async (ctx) => {
 async function runFreeRfTronk(ctx, vin) {
   const chatId = ctx.chat.id;
   try {
-    await ctx.reply('✅ Подписка подтверждена.\n ✨Запускаю БЕСПЛАТНУЮ полную проверку по РФ (по вашей подписке). Это может занять несколько минут.');
+    await ctx.replyHTML(MSG_SUBS_CONFIRMED_FREE_RF,);
     const res = await tronkFetchReportJson({ vin, extra: { chatId } });
     if (res.ok) {
       await rfFreeStore.setUsedNow(chatId);
@@ -2657,7 +2745,7 @@ async function runFreeRfTronk(ctx, vin) {
   }
 }
 
-/* === Экран подписки (нет кнопки «Оплатить», только подписка) === */
+/* === Экран подписки (живое меню; удаляется после нажатия «Проверить подписку») === */
 async function showSubscribeGate(ctx) {
   const link = RF_SUBS_CHANNEL.startsWith('@')
     ? `https://t.me/${RF_SUBS_CHANNEL.slice(1)}`
@@ -2676,6 +2764,7 @@ async function showSubscribeGate(ctx) {
 /* === Кнопка «Проверил подписку» === */
 bot.action('rf_free_check_sub', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx); // прибираем «живое» меню подписки
   const chatId = ctx.chat.id;
   const st = getState(chatId);
   const vin = st.lastVin;
@@ -2700,6 +2789,7 @@ bot.action('rf_free_check_sub', async (ctx) => {
 /* === Кнопка оплаты TRONK (из РФ-меню) — использует последний VIN === */
 bot.action('full_check_rf', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx); // убираем RF-меню после клика
   const chatId = ctx.chat.id;
   const st = getState(chatId);
   const vin = st.lastVin;
@@ -2707,23 +2797,20 @@ bot.action('full_check_rf', async (ctx) => {
   if (!vin) {
     await ctx.reply('VIN не найден в текущем сеансе. Введите VIN для проверки по РФ.');
     setState(chatId, { stage:'await_vin', processing:false });
-    return
+    return;
   }
 
-  // 1) Проверка подписки
   const subscribed = await isUserSubscribed(chatId);
   if (!subscribed) {
     await showSubscribeGate(ctx);
     return;
   }
 
-  // 2) Бесплатный фритир (1 раз/сутки)
   if (await rfFreeStore.isAvailable(chatId)) {
     await runFreeRfTronk(ctx, vin);
     return;
   }
 
-  // 3) Платный поток
   try {
     const left = await rfFreeStore.remainingMs(chatId);
     const note = ` Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.\nДождитесь окончания времени, или получите проверку сейчас⬇️`;
@@ -2744,25 +2831,34 @@ bot.action('full_check_rf', async (ctx) => {
   }
 });
 
-/* === Полная проверка по РФ (ИМЕННО из пост-меню vagvin) — всегда просим новый VIN === */
+/* === Полная проверка по РФ (из пост-меню vagvin) — всегда просим новый VIN === */
 bot.action('full_check_rf_newvin', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
+  await deletePaymentPromptByChat(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, lastVin: null });
   await ctx.reply('Введите VIN для полной проверки по РФ: 17 символов, без I O Q.');
-  setState(ctx.chat.id, { paymentMenu: null });
 });
 
 /* back */
 bot.action('enter_another_vin', async (ctx) => {
   await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
+  await deletePaymentPromptByChat(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, lastVin: null, pendingBrandSelection: null, lastRfCardText: null });
   await ctx.reply('Окей — введите VIN (17 символов, без I O Q).');
-  setState(ctx.chat.id, { paymentMenu: null });
 });
-bot.action('back_to_type', async (ctx) => { await ctx.answerCbQuery(); await ensureStartedCommands(ctx.chat.id); return sendTypeSelection(ctx); });
+bot.action('back_to_type', async (ctx) => {
+  await ctx.answerCbQuery();
+  await deleteCallbackMessage(ctx);
+  await deletePaymentPromptByChat(ctx.chat.id);
+  await ensureStartedCommands(ctx.chat.id);
+  return sendTypeSelection(ctx);
+});
 bot.action('back_to_rf_card', async (ctx) => {
   await ctx.answerCbQuery();
-  setState(ctx.chat.id, { paymentMenu: null });
+  await deleteCallbackMessage(ctx);
+  await deletePaymentPromptByChat(ctx.chat.id);
   const st = getState(ctx.chat.id);
   if (st.lastRfCardText) await ctx.reply(st.lastRfCardText, buildRfKeyboard());
   else await sendTypeSelection(ctx);
@@ -2895,7 +2991,7 @@ app.all('/vagvin/webhook', upload.any(), async (req, res) => {
           try { await bot.telegram.sendMessage(chatId, String(l)); } catch (e) { console.error('[WEBHOOK] send link failed:', e?.message || e); }
         }
       }
-      // Показать пост-меню; из vagvin РФ — всегда новый VIN
+      // Пост-меню; из vagvin РФ — всегда новый VIN (меню само удалится при кликах)
       try { await sendPostMenuByChat(chatId, { rfNeedsNewVin: true }); } catch {}
     } catch (e) { console.error('[WEBHOOK] telegram send error:', e?.message || e); }
 
@@ -2981,12 +3077,8 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
     if (payment.status === 'canceled') {
       if (prev.canceledHandled) { inflightPayments.delete(paymentId); return res.json({ ok:true, note:'dup_canceled' }); }
       await paymentsStore.merge(paymentId, { canceledHandled: true });
-      const flowTitle = (f) => f === 'tronk_rf'
-        ? 'Полная проверка по РФ '
-        : (f === 'vagvin_equipment' ? 'Комплектация ' : (f === 'vagvin_oem' ? 'История по дилерской базе ' : f || 'оплата'));
-      if (chatId) {
-        // здесь можно отправить уведомление об отмене, если требуется
-      }
+      // Удалим живое меню оплаты, чтобы не висело
+      if (meta?.chat_id) await deletePaymentPromptByChat(Number(meta.chat_id));
       inflightPayments.delete(paymentId);
       return res.json({ ok:true });
     }
