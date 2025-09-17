@@ -1451,7 +1451,7 @@ async function sendTypeSelectionByChat(chatId) {
     [Markup.button.callback('👜 Проверка комплектации по VIN', 'type_equipment')]
   ]);
   await ensureStartedCommands(chatId);
-  await bot.telegram.sendMessage(chatId, MSG_SERVICES_HTML, kb);
+  await sendHTML(chatId, MSG_SERVICES_HTML, kb);
 }
 
 /* === Пост-меню после отчётов vagvin === */
@@ -1498,7 +1498,7 @@ const buildPostMenuAfterRF = () => Markup.inlineKeyboard([
   [Markup.button.callback('Проверка комплектации по VIN', 'type_equipment')],
   [Markup.button.callback('Ввести ещё один VIN (полная проверка)', 'full_check_rf_newvin')]
 ]);
-const sendPostMenuAfterRF = async (ctx) => { await ctx.reply(MSG_AFTER_RF, buildPostMenuAfterRF()); };
+const sendPostMenuAfterRF = async (ctx) => { await ctx.replyHTML(MSG_AFTER_RF, buildPostMenuAfterRF()); };
 async function sendPostMenuAfterRFByChat(chatId) {
   await sendHTML(chatId, MSG_AFTER_RF, buildPostMenuAfterRF());
 }
