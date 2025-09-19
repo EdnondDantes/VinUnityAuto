@@ -1,5 +1,5 @@
 const {
-MSG_AFTER_OEM, MSG_AFTER_EQUIP, MSG_AFTER_RF, MSG_SERVICES_HTML, MSG_PAYMENT_RECEIVED_MANUAL, MSG_SUBS_CONFIRMED_FREE_RF, MSG_REPORT_REQUESTED_OK, MSG_VAG_AWAITING
+MSG_AFTER_OEM, MSG_AFTER_EQUIP, MSG_AFTER_RF, MSG_SERVICES_HTML, MSG_PAYMENT_RECEIVED_MANUAL, MSG_SUBS_CONFIRMED_FREE_RF, MSG_REPORT_REQUESTED_OK, MSG_VAG_AWAITING, MSG_REPORT_REQUESTED_ADVERtISING 
 } = require('./messages');
 
 // как просил — одной строкой (добавь свои значения)
@@ -917,6 +917,23 @@ bot.use((ctx, next) => {
 const sendHTML = (chatId, text, extra = {}) =>
   bot.telegram.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true, ...extra });
 
+const _delayedTimers = new Map();
+function scheduleMessage(chatId, html, { delayMs = 5000, extra = {}, tag } = {}) {
+  const taskId = tag || `${chatId}:${Date.now()}:${Math.random().toString(36).slice(2,7)}`;
+
+  const timer = setTimeout(async () => {
+    _delayedTimers.delete(taskId);
+    try {
+      await sendHTML(chatId, html, extra);
+    } catch (e) {
+      console.warn('[scheduleMessage] send failed:', e?.message || e);
+    }
+  }, Math.max(0, Number(delayMs) || 0));
+
+  _delayedTimers.set(taskId, timer);
+  return taskId;
+}
+
 /* ========================== BRAND SUPPORT ROUTING ========================== */
 // ВАЖНО: BRANDS_LIST и WMI_TO_BRAND уже объявлены выше в вашем коде и тут не изменяются.
 
@@ -1438,17 +1455,17 @@ const sendTypeSelection = async (ctx) => {
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   await ensureStartedCommands(chatId);
   await ctx.replyHTML(MSG_SERVICES_HTML, Markup.inlineKeyboard([
-    [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
-    [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
-    [Markup.button.callback('👜 Проверка комплектации', 'type_equipment')]
+    [Markup.button.callback('Полная проверка истории авто по РФ', 'type_history')],
+    [Markup.button.callback('Проверка по базе дилеров', 'type_oem_history')],
+    [Markup.button.callback('Запрос комплектации', 'type_equipment')]
   ]));
 };
 async function sendTypeSelectionByChat(chatId) {
   setState(chatId, { stage: 'choose_type', processing: false, pendingBrandSelection: null });
   const kb = Markup.inlineKeyboard([
-    [Markup.button.callback('🇷🇺 Полная проверка истории авто по РФ', 'type_history')],
-    [Markup.button.callback('🔗 Проверка истории по дилерской базе', 'type_oem_history')],
-    [Markup.button.callback('👜 Проверка комплектации по VIN', 'type_equipment')]
+    [Markup.button.callback('Полная проверка истории авто по РФ', 'type_history')],
+    [Markup.button.callback('Проверка по базе дилеров', 'type_oem_history')],
+    [Markup.button.callback('Запрос комплектации по VIN', 'type_equipment')]
   ]);
   await ensureStartedCommands(chatId);
   await sendHTML(chatId, MSG_SERVICES_HTML, kb);
@@ -2299,6 +2316,7 @@ async function onPaymentSucceeded({ chatId, vin, flow, payment }) {
       const prevState = await paymentsStore.get(payment.id);
       if (!prevState?.succeededAnnounced) {
         await sendHTML(chatId, MSG_REPORT_REQUESTED_OK,);
+        scheduleMessage(chatId, MSG_REPORT_REQUESTED_ADVERtISING, { delayMs: 5000 });
         await paymentsStore.merge(payment.id, { succeededAnnounced: true });
       }
 
@@ -2732,6 +2750,7 @@ async function runFreeRfTronk(ctx, vin) {
   const chatId = ctx.chat.id;
   try {
     await ctx.replyHTML(MSG_SUBS_CONFIRMED_FREE_RF,);
+    scheduleMessage(chatId, MSG_REPORT_REQUESTED_ADVERtISING, { delayMs: 5000 });
     const res = await tronkFetchReportJson({ vin, extra: { chatId } });
     if (res.ok) {
       await rfFreeStore.setUsedNow(chatId);
