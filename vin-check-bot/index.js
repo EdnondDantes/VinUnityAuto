@@ -1387,6 +1387,7 @@ const setState = (chatId, patch) => {
 const EPHTAGS = Object.freeze({
   PAYMENT: 'payment',
   RF_PROGRESS: 'rf_progress',
+  SUBS_WARN: 'subs_warn',
 });
 async function deleteMessageById(chatId, messageId) {
   if (!messageId) return;
@@ -1416,6 +1417,18 @@ async function sendRfProgress(ctx, text) {
   await deleteEphemeralTag(chatId, EPHTAGS.RF_PROGRESS);
   const sent = await ctx.reply(text);
   setEphemeralTag(chatId, EPHTAGS.RF_PROGRESS, sent.message_id);
+}
+
+async function sendEphemeral(ctx, tag, text, extra = {}, { ttlMs = 15000, alsoToast = true } = {}) {
+  const chatId = ctx.chat.id;
+  if (alsoToast) { try { await ctx.answerCbQuery(text, { show_alert: false }); } catch {} }
+  await deleteEphemeralTag(chatId, tag);
+  const sent = await ctx.reply(text, extra);
+  setEphemeralTag(chatId, tag, sent.message_id);
+  if (ttlMs && ttlMs > 0) {
+    setTimeout(() => { deleteEphemeralTag(chatId, tag).catch(()=>{}); }, ttlMs);
+  }
+  return sent;
 }
 
 /* === Валидация VIN === */
@@ -2783,7 +2796,6 @@ async function showSubscribeGate(ctx) {
 /* === Кнопка «Проверил подписку» === */
 bot.action('rf_free_check_sub', async (ctx) => {
   await ctx.answerCbQuery();
-  await deleteCallbackMessage(ctx); // прибираем «живое» меню подписки
   const chatId = ctx.chat.id;
   const st = getState(chatId);
   const vin = st.lastVin;
@@ -2794,9 +2806,12 @@ bot.action('rf_free_check_sub', async (ctx) => {
   }
   const ok = await isUserSubscribed(chatId);
   if (!ok) {
-    await ctx.reply('Похоже, подписка ещё не активна. Подпишитесь и попробуйте снова.');
+    await sendEphemeral(ctx, EPHTAGS.SUBS_WARN,
+      'Похоже, подписка ещё не активна. Подпишитесь и попробуйте снова.',
+      { disable_web_page_preview: true }, { ttlMs: 15000, alsoToast: true });
     return;
   }
+  await deleteCallbackMessage(ctx);
   if (await rfFreeStore.isAvailable(chatId)) {
     await runFreeRfTronk(ctx, vin);
   } else {
