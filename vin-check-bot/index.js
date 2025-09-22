@@ -1928,8 +1928,8 @@ function buildYooReceipt({
   currency = YKC_CURRENCY,
   customer = {email: 'harlequinjudi@powerscrews.com' , phone: '+7 999 999 99 99', full_name: 'John Doe'},                 // { email, phone, full_name }
   vatCode = YKC_VAT_CODE,
-  paymentMode = 'full_prepayment', // 'full_prepayment' | 'full_payment' | ...
-  paymentSubject = 'service',      // 'service' для услуг
+  paymentMode = 'full_prepayment', 
+  paymentSubject = 'service',
   taxSystemCode = YKC_TAX_SYSTEM_CODE
 }) {
   const toMoney = (n) => {
