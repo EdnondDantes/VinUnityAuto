@@ -1894,6 +1894,11 @@ const YKC_SECRET_KEY = process.env.YKC_SECRET_KEY || '';
 const YKC_RETURN_URL = process.env.YKC_RETURN_URL || 'https://yookassa.ru';
 const YKC_CURRENCY = process.env.YKC_CURRENCY || 'RUB';
 
+// YKC_VAT_CODE: 1 — без НДС, 2 — НДС 0%, 3 — 10%, 4 — 20%, 5 — 10/110, 6 — 20/120
+const YKC_VAT_CODE = Number(process.env.YKC_VAT_CODE || 1);
+// YKC_TAX_SYSTEM_CODE: 1-ОСН, 2-УСН(доход), 3-УСН(доход-расход), 4-ЕНВД(устар.), 5-ЕСХН, 6-ПСН; 0 — не отправлять поле
+const YKC_TAX_SYSTEM_CODE = Number(process.env.YKC_TAX_SYSTEM_CODE || 0);
+
 const YKC_PRICE_TRONK_RF = process.env.YKC_PRICE_TRONK_RF || '99.00';
 const YKC_PRICE_VAG_EQUIP = process.env.YKC_PRICE_VAG_EQUIP || '299.00';
 const YKC_PRICE_VAG_OEM   = process.env.YKC_PRICE_VAG_OEM   || '499.00';
@@ -1917,18 +1922,82 @@ function _yooErrDetails(err) {
   const param = data?.parameter;
   return { status, code, description: desc, parameter: param, raw: data };
 }
+function buildYooReceipt({
+  title,
+  amount,
+  currency = YKC_CURRENCY,
+  customer = {email: 'harlequinjudi@powerscrews.com' , phone: '+7 999 999 99 99', full_name: 'John Doe'},                 // { email, phone, full_name }
+  vatCode = YKC_VAT_CODE,
+  paymentMode = 'full_prepayment', // 'full_prepayment' | 'full_payment' | ...
+  paymentSubject = 'service',      // 'service' для услуг
+  taxSystemCode = YKC_TAX_SYSTEM_CODE
+}) {
+  const toMoney = (n) => {
+    const v = Number(n);
+    if (!Number.isFinite(v)) throw new Error('Invalid amount for receipt');
+    return v.toFixed(2);
+  };
+
+  const item = {
+    description: String(title || 'Услуга').slice(0, 128),
+    quantity: 1.0,
+    amount: { value: toMoney(amount), currency },
+    vat_code: Number(vatCode),
+    payment_mode: paymentMode,
+    payment_subject: paymentSubject
+  };
+
+  const receipt = { items: [item] };
+
+  const { email, phone, full_name } = customer || {};
+  if (email || phone || full_name) {
+    receipt.customer = {};
+    if (full_name) receipt.customer.full_name = String(full_name).slice(0, 256);
+    if (phone) {
+      // нормализуем в формат 79XXXXXXXXX
+      const p = String(phone).replace(/[^\d]/g, '');
+      receipt.customer.phone = p.startsWith('7') ? p : (p.startsWith('8') ? ('7' + p.slice(1)) : p);
+    }
+    if (email) receipt.customer.email = String(email).slice(0, 254);
+  }
+
+  if (Number(taxSystemCode)) {
+    receipt.tax_system_code = Number(taxSystemCode);
+  }
+
+  return receipt;
+}
 
 async function ykcCreatePayment({ chatId, vin, flow, amount, description, extraMeta = {}, capture }) {
   const captureFlag = (typeof capture === 'boolean')
     ? capture
     : (flow === 'tronk_rf'); // TRONK — одноэтапный, vagvin — двухстадийный
 
+  // Короткое описание (ограничение YooKassa — до 128 символов)
+  const desc = String(description || `Оплата: ${flow} (VIN ${vin || '-'})`).slice(0, 128);
+
+  // Собираем фискальный чек (обязательно при включённой фискализации)
+  const receipt = buildYooReceipt({
+    title: desc,
+    amount,
+    currency: YKC_CURRENCY,
+    // Передайте сюда реальные контакты, если они есть у вас в сессии:
+    // customer: { email, phone, full_name }
+    customer: undefined,
+    vatCode: YKC_VAT_CODE,
+    // По умолчанию: единоэтапная (TRONK) — предоплата; двухстадийная (VAG/OEM) — оплата при оказании (на этапе capture).
+    paymentMode: captureFlag ? 'full_prepayment' : 'full_payment',
+    paymentSubject: 'service',
+    taxSystemCode: YKC_TAX_SYSTEM_CODE
+  });
+
   const body = {
-    amount: { value: String(amount), currency: YKC_CURRENCY },
+    amount: { value: String(Number(amount).toFixed(2)), currency: YKC_CURRENCY },
     capture: captureFlag,
-    description: description || `Оплата: ${flow} (VIN ${vin || '-'})`,
+    description: desc,
     confirmation: { type: 'redirect', return_url: YKC_RETURN_URL },
-    metadata: { chat_id: String(chatId), vin: vin || '', flow, ...extraMeta }
+    metadata: { chat_id: String(chatId), vin: vin || '', flow, ...extraMeta },
+    receipt
   };
 
   const idemp = uuidv4();
@@ -1951,6 +2020,7 @@ async function ykcCancelPayment(paymentId) {
 async function ykcCaptureWithRetries(paymentId, opts = {}) {
   const {
     explicitAmount, currency,
+    receipt: captureReceipt,
     attempts = 3,
     retryDelayMs = 1200,
     finalBackoffAttempts = 6,
@@ -1959,18 +2029,28 @@ async function ykcCaptureWithRetries(paymentId, opts = {}) {
 
   const attemptOnce = async (variant, paymentSnap) => {
     try {
-      if (variant === 1) return await ykcCaptureRaw(paymentId, undefined);
+      if (variant === 1) {
+        const body = {};
+        if (captureReceipt) body.receipt = captureReceipt;
+        return await ykcCaptureRaw(paymentId, Object.keys(body).length ? body : undefined);
+      }
       if (variant === 2) {
         const amount = explicitAmount || paymentSnap?.amount?.value;
         const curr   = currency || paymentSnap?.amount?.currency || 'RUB';
-        return await ykcCaptureRaw(paymentId, { amount: { value: String(amount), currency: curr } });
+        const body = { amount: { value: String(amount), currency: curr } };
+        if (captureReceipt) body.receipt = captureReceipt;
+        return await ykcCaptureRaw(paymentId, body);
       }
       if (variant === 3) {
-        const amount = _formatMoney(Number(explicitAmount || paymentSnap?.amount?.value), currency || paymentSnap?.amount?.currency || 'RUB');
+        const amount = _formatMoney(Number(explicitAmount || paymentSnap?.mount?.value), currency || paymentSnap?.amount?.currency || 'RUB');
         const curr   = currency || paymentSnap?.amount?.currency || 'RUB';
-        return await ykcCaptureRaw(paymentId, { amount: { value: String(amount), currency: curr } });
+        const body = { amount: { value: String(amount), currency: curr } };
+        if (captureReceipt) body.receipt = captureReceipt;
+        return await ykcCaptureRaw(paymentId, body);
       }
-      return await ykcCaptureRaw(paymentId, undefined);
+      const body = {};
+      if (captureReceipt) body.receipt = captureReceipt;
+      return await ykcCaptureRaw(paymentId, Object.keys(body).length ? body : undefined);
     } catch (e) {
       const det = _yooErrDetails(e);
       console.error('[YKC capture] fail', JSON.stringify({ paymentId, variant, ...det }, null, 2));
@@ -2577,7 +2657,7 @@ bot.action(/brand_pick_(\d+)/, async (ctx) => {
     });
     await showPaymentPrompt(ctx, { title, vin, amount: price, url: confirmationUrl, backAction: 'back_to_type' });
   } catch (e) {
-    await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.');
+    await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.'+(e.message ? ` (${e.message})` : ''));
   }
 
   setState(chatId, { processing: false, pendingBrandSelection: null, lastVin: vin, lastVagService: (service === 'equipment' ? 'equipment' : 'oem_history') });
@@ -2658,7 +2738,7 @@ bot.on('text', async (ctx) => {
           description: `Комплектация по VIN  — VIN ${vin}`, extraMeta: { marka: brand }, capture: false
         });
         await showPaymentPrompt(ctx, { title: 'Комплектация ', vin, amount: YKC_PRICE_VAG_EQUIP, url: confirmationUrl, backAction: 'back_to_type' });
-      } catch (e) { await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.'); }
+      } catch (e) { await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.'+(e.message ? ` (${e.message})` : '')); }
     } else {
       await askBrandSelection(ctx, { vin, service: 'equipment', command_str: 'check_multibr_pr_kod', note: 'Марку по VIN определить не удалось.' });
     }
@@ -2682,7 +2762,7 @@ bot.on('text', async (ctx) => {
           description: `История по дилерской базе  — VIN ${vin}`, extraMeta: { marka: brand }, capture: false
         });
         await showPaymentPrompt(ctx, { title: 'История по дилерской базе ', vin, amount: YKC_PRICE_VAG_OEM, url: confirmationUrl, backAction: 'back_to_type' });
-      } catch (e) { await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.'); }
+      } catch (e) { await ctx.reply('Не удалось создать платёж. Попробуйте ещё раз.'+(e.message ? ` (${e.message})` : '')); }
     } else {
       await askBrandSelection(ctx, { vin, service: 'oem_history', command_str: 'check_data_multibr_zapros', note: 'Марку по VIN определить не удалось.' });
     }
