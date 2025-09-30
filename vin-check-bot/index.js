@@ -1923,6 +1923,17 @@ function _yooErrDetails(err) {
   return { status, code, description: desc, parameter: param, raw: data };
 }
 
+function _safeUrl(u) {
+  try {
+    const x = new URL(String(u));
+    // скрываем query/fragment, чтобы не светить параметры провайдера
+    return `${x.origin}${x.pathname}`;
+  } catch { return undefined; }
+}
+const _clientIp = (req) => req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
+  || req.socket?.remoteAddress || req.ip || 'unknown';
+
+
 // --- Доп. утилиты для логирования и человеко-понятных причин отмены ---
 function _maskPayment(p = {}) {
   if (!p) return {};
@@ -2035,7 +2046,11 @@ async function ykcCreatePayment({ chatId, vin, flow, amount, description, extraM
     console.error('[YKC createPayment:err]', det);
     throw Object.assign(new Error(det.description || 'createPayment error'), { details: det });
   }
-  console.log('[YKC createPayment:res]', _maskPayment(payment));
+  const confUrl = payment?.confirmation?.confirmation_url;
+  console.log('[YKC createPayment:res]', {
+    ..._maskPayment(payment),
+    confirmation_url: _safeUrl(confUrl)
+  });
   const url = payment?.confirmation?.confirmation_url;
   if (!url) throw new Error('YooKassa did not return confirmation_url');
   return { paymentId: payment.id, confirmationUrl: url, status: payment.status, metadata: payment.metadata };
@@ -2195,6 +2210,7 @@ async function showPaymentPrompt(ctx, { title, vin, amount, url, backAction, not
   ]);
 
   const sent = await ctx.reply(lines.join('\n'), kb);
+  paymentMenu.paymentId = (await paymentsStore.get(`exp:tronk_rf:${chatId}:${vin}`))?.paymentId || null;
 
   // Запомним ID сообщения, чтобы удалить после оплаты
   paymentMenu.messageId = sent.message_id;
@@ -3167,6 +3183,13 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
     const paymentId = req.body?.object?.id;
     if (!paymentId) return res.status(400).json({ ok:false, error:'no payment id' });
 
+    console.log('[YKC webhook:incoming]', {
+      ip: _clientIp(req),
+      ua: req.headers['user-agent'],
+      event,
+      yandexReqId: req.headers['x-yandex-request-id'] || req.headers['x-request-id']
+    });
+
     if (inflightPayments.has(paymentId)) {
       console.log('[YKC webhook] duplicate in-flight', paymentId);
       return res.json({ ok:true, note: 'duplicate_inflight' });
@@ -3174,7 +3197,10 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
     inflightPayments.set(paymentId, true);
 
     const payment = await yoo.getPayment(paymentId);
-    console.log('[YKC webhook:payment]', _maskPayment(payment));
+     console.log('[YKC webhook:payment]', {
+       ..._maskPayment(payment),
+       confirmation_url: _safeUrl(payment?.confirmation?.confirmation_url)
+     }); // подробный снапшот статуса
     const meta = payment.metadata || {};
     const chatId = Number(meta.chat_id);
     const vin = meta.vin || '';
@@ -3228,6 +3254,7 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
       await paymentsStore.merge(paymentId, { canceledHandled: true });
       // Удалим живое меню оплаты, чтобы не висело
       const det = payment.cancellation_details || {};
+      console.warn('[YKC canceled:details]', { paymentId, reason: det.reason, party: det.party });
       console.warn('[YKC canceled]', { id: payment.id, reason: det.reason, party: det.party });
       try {
         if (meta?.chat_id) {
@@ -3248,6 +3275,26 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
     res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+/* --- Диагностический эндпоинт: вручную проверить статус платежа --- */
+app.get('/diag/yookassa/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const p = await yoo.getPayment(id);
+    res.json({
+      ok: true,
+      payment: {
+        id: p.id, status: p.status, paid: p.paid,
+        amount: p.amount, description: p.description,
+        metadata: p.metadata, cancellation_details: p.cancellation_details,
+        confirmation_url: _safeUrl(p?.confirmation?.confirmation_url)
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
 
 /* ========================== Startup ========================== */
 (() => {
