@@ -1922,6 +1922,27 @@ function _yooErrDetails(err) {
   const param = data?.parameter;
   return { status, code, description: desc, parameter: param, raw: data };
 }
+
+// --- Доп. утилиты для логирования и человеко-понятных причин отмены ---
+function _maskPayment(p = {}) {
+  if (!p) return {};
+  return {
+    id: p.id, status: p.status, paid: p.paid,
+    amount: p.amount, description: p.description,
+    metadata: p.metadata, cancellation_details: p.cancellation_details
+  };
+}
+function _humanCancelReason(reason) {
+  switch (reason) {
+    case '3d_secure_failed':        return 'Не прошла 3-D Secure проверка.';
+    case 'expired_on_confirmation': return 'Ссылка оплаты/страница подтверждения просрочена.';
+    case 'issuer_unavailable':      return 'Банк-эмитент временно недоступен.';
+    case 'fraud_suspected':         return 'Платёж отклонён антифрод-фильтрами.';
+    case 'payment_method_restricted': return 'Ограничения банка на интернет-платежи.';
+    default: return null;
+  }
+}
+
 function buildYooReceipt({
   title,
   amount,
@@ -2001,7 +2022,20 @@ async function ykcCreatePayment({ chatId, vin, flow, amount, description, extraM
   };
 
   const idemp = uuidv4();
-  const payment = await yoo.createPayment(body, idemp);
+  console.log('[YKC createPayment:req]', {
+    idempotenceKey: idemp,
+    amount: body.amount, capture: body.capture, description: body.description,
+    metadata: body.metadata, receipt: !!body.receipt, return_url: body.confirmation?.return_url
+  });
+  let payment;
+  try {
+    payment = await yoo.createPayment(body, idemp);
+  } catch (e) {
+    const det = _yooErrDetails(e);
+    console.error('[YKC createPayment:err]', det);
+    throw Object.assign(new Error(det.description || 'createPayment error'), { details: det });
+  }
+  console.log('[YKC createPayment:res]', _maskPayment(payment));
   const url = payment?.confirmation?.confirmation_url;
   if (!url) throw new Error('YooKassa did not return confirmation_url');
   return { paymentId: payment.id, confirmationUrl: url, status: payment.status, metadata: payment.metadata };
@@ -2042,7 +2076,7 @@ async function ykcCaptureWithRetries(paymentId, opts = {}) {
         return await ykcCaptureRaw(paymentId, body);
       }
       if (variant === 3) {
-        const amount = _formatMoney(Number(explicitAmount || paymentSnap?.mount?.value), currency || paymentSnap?.amount?.currency || 'RUB');
+        const amount = _formatMoney(Number(explicitAmount || paymentSnap?.amount?.value), currency || paymentSnap?.amount?.currency || 'RUB');
         const curr   = currency || paymentSnap?.amount?.currency || 'RUB';
         const body = { amount: { value: String(amount), currency: curr } };
         if (captureReceipt) body.receipt = captureReceipt;
@@ -3140,6 +3174,7 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
     inflightPayments.set(paymentId, true);
 
     const payment = await yoo.getPayment(paymentId);
+    console.log('[YKC webhook:payment]', _maskPayment(payment));
     const meta = payment.metadata || {};
     const chatId = Number(meta.chat_id);
     const vin = meta.vin || '';
@@ -3192,6 +3227,14 @@ app.post('/yookassa/webhook', express.json({ type: '*/*' }), async (req, res) =>
       if (prev.canceledHandled) { inflightPayments.delete(paymentId); return res.json({ ok:true, note:'dup_canceled' }); }
       await paymentsStore.merge(paymentId, { canceledHandled: true });
       // Удалим живое меню оплаты, чтобы не висело
+      const det = payment.cancellation_details || {};
+      console.warn('[YKC canceled]', { id: payment.id, reason: det.reason, party: det.party });
+      try {
+        if (meta?.chat_id) {
+        }
+      } catch (e) {
+        console.error('[YKC canceled:notify err]', e?.message || e);
+      }
       if (meta?.chat_id) await deletePaymentPromptByChat(Number(meta.chat_id));
       inflightPayments.delete(paymentId);
       return res.json({ ok:true });
