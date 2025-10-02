@@ -2249,7 +2249,12 @@ async function deletePaymentPromptByChat(chatId) {
 const TRONK_API_KEY = process.env.TRONK_API_KEY || '';
 const TRONK_ENDPOINT = process.env.TRONK_ENDPOINT || 'https://data.tronk.info/reportjson.ashx';
 
-const tronkJsonClient = axios.create({ baseURL: TRONK_ENDPOINT, timeout: 20000 });
+const tronkJsonClient = axios.create({
+  baseURL: TRONK_ENDPOINT,
+  timeout: 20000,              // базовый (быстрый) таймаут для create/check
+  maxContentLength: Infinity,  // большие ответы не рубим
+  maxBodyLength: Infinity
+});
 
 const TRONK_DEBUG_CHAT = (process.env.TRONK_DEBUG_CHAT || '').toLowerCase() === 'true' || process.env.TRONK_DEBUG_CHAT === '1';
 const TRONK_DEBUG_CONSOLE = true;
@@ -2343,13 +2348,18 @@ function _tronkLogConsole(title, payload) {
   }
 }
 
-async function tronkRequest(params, { chatId, tag } = {}) {
+async function tronkRequest(params, { chatId, tag, timeoutMs } = {}) {
   const safe = _redactTronkParams(params);
   _tronkLogConsole(`REQUEST${tag ? '('+tag+')' : ''}`, { endpoint: TRONK_ENDPOINT, params: safe });
   await _tronkLogToChat(bot, chatId, `REQUEST${tag ? ' '+tag : ''}`, { endpoint: TRONK_ENDPOINT, params: safe });
 
-  const r = await tronkJsonClient.get('', { params, responseType: 'json', validateStatus: s => s >= 200 && s < 500 });
-  let data = r.data;
+  const r = await tronkJsonClient.get('', {
+    params,
+    responseType: 'json',
+    validateStatus: s => s >= 200 && s < 500,
+    // важное: перезаписываем таймаут на уровне запроса
+    timeout: timeoutMs || tronkJsonClient.defaults.timeout
+  });  let data = r.data;
   if (typeof data === 'string') { try { data = JSON.parse(data); } catch {} }
 
   _tronkLogConsole(`RESPONSE${tag ? '('+tag+')' : ''}`, { status: r.status, data: shorten(data, 4000) });
@@ -2385,7 +2395,10 @@ async function tronkCheck({ id }, extra) {
 
 async function tronkResult({ id }, extra) {
   if (!TRONK_API_KEY) return { ok: false, error: 'TRONK_API_KEY не настроен' };
-  const r = await tronkRequest({ key: TRONK_API_KEY, mode: 'result', id }, { ...extra, tag: 'result' });
+  const r = await tronkRequest(
+    { key: TRONK_API_KEY, mode: 'result', id },
+    { ...extra, tag: 'result', timeoutMs: 120000 } // 120s
+  );
   if (r.status !== 200) return { ok: false, error: `HTTP ${r.status}`, raw: r.data };
   if (!r.data || r.data.Error === true) return { ok: false, error: r.data?.ErrorMsg || r.data?.Msg || 'result: пустой/ошибка', raw: r.data };
   return { ok: true, data: r.data };
