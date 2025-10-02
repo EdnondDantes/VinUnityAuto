@@ -872,14 +872,29 @@ const PAYMENTS_STATE_FILE = path.resolve(__dirname, 'ykc-payments.json');
 /* === FREE RF CHECK (1 раз/сутки при подписке) === */
 const RF_FREE_FILE = path.resolve(__dirname, 'rf-free-usage.json');
 const RF_FREE_COOLDOWN_MS = Number(process.env.RF_FREE_COOLDOWN_MS || 24 * 60 * 60 * 1000); // 24 часа
-// Канал с подпиской
-const RF_SUBS_CHANNEL =
-  process.env.FREE_RF_CHANNEL_USERNAME ||
-  (() => {
-    const raw = 'https://t.me/chan122334';
-    const m = raw.match(/t\.me\/([A-Za-z0-9_]+)/);
-    return m ? '@' + m[1] : '@chan122334';
-  })();
+const RF_SUBS_CHANNELS = (() => {
+  // Приоритет: FREE_RF_CHANNELS="https://t.me/one,@two,three"
+  // либо пара переменных FREE_RF_CHANNEL_USERNAME / FREE_RF_CHANNEL_USERNAME_2
+  const src =
+    process.env.FREE_RF_CHANNELS ||
+    [process.env.FREE_RF_CHANNEL_USERNAME, process.env.FREE_RF_CHANNEL_USERNAME_2]
+      .filter(Boolean)
+      .join(',');
+  const rawList = (src && typeof src === 'string') ? src.split(/[,\s]+/) : [];
+  const norm = rawList.map((s) => {
+    if (!s) return null;
+    let u = String(s).trim();
+    const m = u.match(/t\.me\/([A-Za-z0-9_]+)/i);
+    const user = m ? m[1] : (u.startsWith('@') ? u.slice(1) : u);
+    return user ? '@' + user : null;
+  }).filter(Boolean);
+  // Дефолт: два фиктивных канала, если не настроено
+  if (!norm.length) return ['@chan122334', '@chanABCDEF'];
+  return Array.from(new Set(norm));
+})();
+
+const _channelLink = (ch) =>
+  ch && ch.startsWith('@') ? `https://t.me/${ch.slice(1)}` : String(ch || '');
 
 /* === LEGAL URLs === */
 const _PUBLIC_BASE = (WEBHOOK_PUBLIC_BASE || '').replace(/\/+$/, '');
@@ -1355,7 +1370,7 @@ async function generateAndSendTronkPdf({ chatId, vin, payload, inlineImages = (p
     await bot.telegram.sendDocument(
       chatId,
       { source: fsSync.createReadStream(pdfPath), filename: pdfName },
-      { caption: `Отчёт(PDF)\nVIN: ${vin || '—'}` }
+      { caption: `Готовый отчет по Российской базе \nVIN: ${vin || '—'}` }
     );
 
     setTimeout(() => { try { fsSync.unlinkSync(pdfPath); } catch {} }, 60_000);
@@ -1526,23 +1541,27 @@ const sendPostMenuAwaiting = async (ctx, { rfNeedsNewVin = false } = {}) => {
 const buildPostMenuAfterRF = () => Markup.inlineKeyboard([
   [Markup.button.callback('Проверка истории по дилерской базе', 'type_oem_history')],
   [Markup.button.callback('Проверка комплектации по VIN', 'type_equipment')],
-  [Markup.button.callback('Ввести ещё один VIN (полная проверка)', 'full_check_rf_newvin')]
+  [Markup.button.callback('Повторная проверка по РФ (новый VIN)', 'full_check_rf_newvin')]
 ]);
 const sendPostMenuAfterRF = async (ctx) => { await ctx.replyHTML(MSG_AFTER_RF, buildPostMenuAfterRF()); };
 async function sendPostMenuAfterRFByChat(chatId) {
   await sendHTML(chatId, MSG_AFTER_RF, buildPostMenuAfterRF());
 }
 
-/* === Проверка подписки на канал === */
-async function isUserSubscribed(chatId) {
-  try {
-    const member = await bot.telegram.getChatMember(RF_SUBS_CHANNEL, chatId);
-    const ok = ['member','administrator','creator'].includes(member.status);
-    return !!ok;
-  } catch (e) {
-    console.warn('[SUBS CHECK] err:', e?.message || e);
-    return false;
+/* === Проверка подписки на ВСЕ каналы === */
+async function isUserSubscribedAll(chatId) {
+  if (!Array.isArray(RF_SUBS_CHANNELS) || RF_SUBS_CHANNELS.length === 0) return false;
+  for (const ch of RF_SUBS_CHANNELS) {
+    try {
+      const member = await bot.telegram.getChatMember(ch, chatId);
+      const ok = ['member', 'administrator', 'creator'].includes(member?.status);
+      if (!ok) return false;
+    } catch (e) {
+      console.warn('[SUBS CHECK] err:', { channel: ch, msg: e?.message || e });
+      return false;
+    }
   }
+  return true;
 }
 
 /* Карточка РФ + меню РФ (эта ИНФОРМАЦИЯ НЕ удаляется) */
@@ -2605,17 +2624,17 @@ bot.command('menu', async (ctx) => {
 bot.command('equipment', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
-  await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>комплектации</b>. Отправьте VIN автомобиля (17 символов).');
 });
 bot.command('oem_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
-  await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по дилерской базе</b>. Отправьте VIN автомобиля (17 символов).');
 });
 bot.command('rf', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
-  await ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по РФ</b>. Отправьте VIN автомобиля (17 символов).');
 });
 
 bot.action('start_flow', async (ctx) => {
@@ -2631,7 +2650,7 @@ bot.action('type_equipment', async (ctx) => {
   await ctx.answerCbQuery();
   await deleteCallbackMessage(ctx); // удалить меню «Выберите тип проверки»
   setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null, lastVagService: 'equipment' });
-  await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>комплектации</b>. Отправьте VIN автомобиля (17 символов).');
 });
 
 bot.action('type_oem_history', async (ctx) => {
@@ -2639,7 +2658,7 @@ bot.action('type_oem_history', async (ctx) => {
   await ctx.answerCbQuery();
   await deleteCallbackMessage(ctx);
   setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null, lastVagService: 'oem_history' });
-  await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по дилерской базе</b>. Отправьте VIN автомобиля (17 символов).');
 });
 bot.action('type_history', async (ctx) => {
   await ensureStartedCommands(ctx.chat.id);
@@ -2647,7 +2666,7 @@ bot.action('type_history', async (ctx) => {
   await deleteCallbackMessage(ctx);
   setState(ctx.chat.id, { stage: 'await_vin', processing: false, pendingBrandSelection: null });
   // ЭТА фраза должна остаться в чате (информативная и требует ответа VIN)
-  await ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)');
+  await ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по РФ</b>. Отправьте VIN автомобиля (17 символов).');
 });
 
 /* Повторить тот же vagvin-тип, но ввести новый VIN */
@@ -2657,10 +2676,10 @@ bot.action('vag_again_same', async (ctx) => {
   const st = getState(ctx.chat.id);
   if (st.lastVagService === 'oem_history') {
     setState(ctx.chat.id, { stage: 'await_vin_oem_history', processing: false, pendingBrandSelection: null });
-    await ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов).');
+    await ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по дилерской базе</b>. Отправьте VIN автомобиля (17 символов).');
   } else {
     setState(ctx.chat.id, { stage: 'await_vin_equipment', processing: false, pendingBrandSelection: null });
-    await ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)');
+    await ctx.replyHTML('🧾 Выбрана проверка <b>комплектации</b>. Отправьте VIN автомобиля (17 символов).');
   }
 });
 
@@ -2731,7 +2750,7 @@ bot.on('text', async (ctx) => {
       pendingBrandSelection: null,
       lastVagService: 'equipment',
     });
-    return ctx.reply('🧾 Выбрана проверка комплектации по VIN. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
+    return ctx.replyHTML('🧾 Выбрана проверка <b>комплектации</b>. Отправьте VIN автомобиля (17 символов).', buildReplyMainKeyboard());
   }
   if (text === MENU_BTN_OEM) {
     await ensureStartedCommands(ctx.chat.id);
@@ -2741,7 +2760,7 @@ bot.on('text', async (ctx) => {
       pendingBrandSelection: null,
       lastVagService: 'oem_history',
     });
-    return ctx.reply('🧾 Выбрана проверка истории авто по дилерской базе. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
+    return ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по дилерской базе</b>. Отправьте VIN автомобиля (17 символов).', buildReplyMainKeyboard());
   }
   if (text === MENU_BTN_RF) {
     await ensureStartedCommands(ctx.chat.id);
@@ -2750,7 +2769,7 @@ bot.on('text', async (ctx) => {
       processing: false,
       pendingBrandSelection: null,
     });
-    return ctx.reply('🧾 Выбрана полная проверка истории авто по РФ. Отправьте VIN автомобиля (17 символов)', buildReplyMainKeyboard());
+    return ctx.replyHTML('🧾 Выбрана проверка <b>истории авто по РФ</b>. Отправьте VIN автомобиля (17 символов).', buildReplyMainKeyboard());
   }
   const chatId = ctx.chat.id;
   const state = getState(chatId);
@@ -2909,16 +2928,34 @@ async function runFreeRfTronk(ctx, vin) {
 
 /* === Экран подписки (живое меню; удаляется после нажатия «Проверить подписку») === */
 async function showSubscribeGate(ctx) {
-  const link = RF_SUBS_CHANNEL.startsWith('@')
-    ? `https://t.me/${RF_SUBS_CHANNEL.slice(1)}`
-    : RF_SUBS_CHANNEL;
-  const kb = Markup.inlineKeyboard([
-    [Markup.button.url('🔔 Открыть канал', link)],
-    [Markup.button.callback('Проверить подписку', 'rf_free_check_sub')],
-    [Markup.button.callback('⬅️ Назад к выбору типа', 'back_to_type')],
-  ]);
+  const linkButtons = [];
+  for (const ch of RF_SUBS_CHANNELS) {
+    const uname = ch.replace(/^@/, '');
+    let label = `🔔 Открыть канал: t.me/${uname}`;
+    try {
+      // Если доступно — показываем «человеческое» имя канала
+      const chatInfo = await bot.telegram.getChat(ch);
+      if (chatInfo?.title) label = `🔔 Открыть канал: ${chatInfo.title}`;
+    } catch (_) {
+      // игнорируем — используем fallback t.me/<username>
+    }
+    linkButtons.push(Markup.button.url(label, _channelLink(ch)));
+  }
+
+  // Клавиатура: по две кнопки-канала в ряд
+  const rows = [];
+  for (let i = 0; i < linkButtons.length; i += 2) {
+    const row = [linkButtons[i]];
+    if (linkButtons[i + 1]) row.push(linkButtons[i + 1]);
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback('✅ Проверить подписку', 'rf_free_check_sub')]);
+  rows.push([Markup.button.callback('⬅️ Назад к выбору типа', 'back_to_type')]);
+
+  const kb = Markup.inlineKeyboard(rows);
   await ctx.reply(
-    '❗️Чтобы БЕСПЛАТНО получить полный отчёт по РФ — подпишитесь на наш телеграмм канал и возвращайтесь за подарком.\n После подписки нажмите кнопку «Проверить подписку»',
+    '❗️Чтобы БЕСПЛАТНО получить полный отчёт по РФ — подпишитесь на оба канала (2 из 2).\n' +
+    'Нажмите на кнопки «Открыть канал», оформите подписку и вернитесь, затем нажмите «Проверить подписку».',
     kb
   );
 }
@@ -2934,10 +2971,10 @@ bot.action('rf_free_check_sub', async (ctx) => {
     setState(chatId, { stage:'await_vin', processing:false });
     return;
   }
-  const ok = await isUserSubscribed(chatId);
+  const ok = await isUserSubscribedAll(chatId);
   if (!ok) {
     await sendEphemeral(ctx, EPHTAGS.SUBS_WARN,
-      'Похоже, подписка ещё не активна. Подпишитесь и попробуйте снова.',
+      'Похоже, подписки ещё нет на все каналы. Подпишитесь на оба и попробуйте снова.',
       { disable_web_page_preview: true }, { ttlMs: 15000, alsoToast: true });
     return;
   }
@@ -2964,7 +3001,7 @@ bot.action('full_check_rf', async (ctx) => {
     return;
   }
 
-  const subscribed = await isUserSubscribed(chatId);
+  const subscribed = await isUserSubscribedAll(chatId);
   if (!subscribed) {
     await showSubscribeGate(ctx);
     return;
@@ -3145,7 +3182,7 @@ app.all('/vagvin/webhook', upload.any(), async (req, res) => {
             await bot.telegram.sendDocument(
               chatId,
               { source: fsSync.createReadStream(f.path), filename: f.originalname || f.filename || 'file' },
-              { caption: `Отчёт по ${_humanVagType(job.type)}` }
+              { caption: `Готовый отчет по ${_humanVagType(job.type)}` }
             );
           } catch (e) { console.error('[WEBHOOK] send file failed:', e?.message || e); }
           finally { try { await fs.unlink(f.path); } catch {} }
