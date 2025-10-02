@@ -2996,7 +2996,33 @@ bot.action('rf_free_check_sub', async (ctx) => {
     await runFreeRfTronk(ctx, vin);
   } else {
     const left = await rfFreeStore.remainingMs(chatId);
-    await ctx.reply(`Бесплатная проверка уже использована. Доступна через ${msToHuman(left)}. Предлагаю оформить платную проверку.`);
+    try {
+      const { confirmationUrl, paymentId } = await ykcCreatePayment({
+        chatId,
+        vin,
+        flow: 'tronk_rf',
+        amount: YKC_PRICE_TRONK_RF,
+        description: `Полная проверка по РФ — VIN ${vin}`,
+        capture: true
+      });
+      const expKey = `exp:tronk_rf:${chatId}:${vin}`;
+      await paymentsStore.put(expKey, { paymentId, chatId, vin, createdAt: new Date().toISOString() });
+
+      await showPaymentPrompt(ctx, {
+        title: 'Полная проверка по РФ',
+        vin,
+        amount: YKC_PRICE_TRONK_RF,
+        url: confirmationUrl,
+        backAction: 'back_to_rf_card',
+        note: `Вы уже использовали бесплатную проверку. Она будет доступна через ${msToHuman(left)}.\n` +
+              'Дождитесь окончания времени, или получите проверку сейчас⬇️'
+      });
+    } catch (e) {
+      await ctx.reply(
+        `Бесплатная проверка уже использована. Доступна через ${msToHuman(left)}.\n` +
+        `Не удалось создать платёж: ${e.message || 'ошибка'}. Попробуйте позже.`
+      );
+    }
   }
 });
 
